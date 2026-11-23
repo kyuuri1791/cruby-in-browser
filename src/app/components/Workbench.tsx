@@ -349,7 +349,12 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
             {lines.map((l, i) => (
               <OutputRow key={i} line={l} onJump={jumpTo} />
             ))}
-            {running && <span className="o-cursor blink" aria-hidden="true">▍</span>}
+            {/* 実行中はカーソルだけ。終わったら、本物のターミナルと同じく次のプロンプトを出す */}
+            {running ? (
+              <span className="o-cursor blink" aria-hidden="true">▍</span>
+            ) : (
+              <div className="o-prompt" aria-hidden="true">$ <span className="o-cursor blink">▍</span></div>
+            )}
           </div>
         </section>
       </div>
