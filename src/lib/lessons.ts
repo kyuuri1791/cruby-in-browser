@@ -66,7 +66,7 @@ const char ruby_description[] =
     "(" RUBY_RELEASE_DATETIME RUBY_REVISION_STR ") "
     "[" RUBY_PLATFORM "]";`),
     ],
-    task: [p("先頭の `ruby` を `myruby` に変える。")],
+    task: [p("`RUBY_DESCRIPTION` の先頭の `ruby` を `myruby` に変える。")],
     answer: [c(`
     "myruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " "`)],
     spec: spec(`
@@ -89,10 +89,9 @@ end`),
       p("メソッドは `Init_Array` の中で `rb_define_method(クラス, \"名前\", 関数, 引数の数)` を呼んで登録しています。"),
       c(`
     rb_define_method(rb_cArray, "push", rb_ary_push_m, -1);`),
-      p("配列の要素は `rb_ary_entry(ary, i)` で取れます（範囲外は `nil`）。"),
     ],
     task: [p("`[1, 2, 3].second` が `2`、`[1].second` が `nil` を返す `Array#second` を作る。")],
-    hints: [note("`rb_cArray` は `Init_Array` の中の `rb_define_class` で作られるので、登録はそれより後に書きます。`\"push\"` を登録している行の近くに書くと確実です。")],
+    hints: [note("配列の要素は `rb_ary_entry(ary, i)` で取れます。範囲外なら `nil` を返します。")],
     answer: [c(`
 static VALUE
 ary_second(VALUE self)
@@ -130,9 +129,10 @@ end`),
     title: "String#shout",
     file: "string",
     body: [
-      p("C から Ruby のメソッドを呼ぶには `rb_funcall(recv, rb_intern(\"name\"), argc, ...)` を使います。文字列の末尾に C の文字列をつなげるには `rb_str_cat_cstr` を使います。"),
+      p("C から Ruby のメソッドを呼ぶには `rb_funcall(recv, mid, argc, ...)` を使います。レシーバ `recv` のメソッド `mid` を、`argc` 個の引数（`...` の部分）で呼びます。`mid` はメソッド名を表す `ID` 型の値で、`rb_intern(\"upcase\")` のように C の文字列から作ります。"),
     ],
     task: [p("`\"hello\".shout` が `\"HELLO!\"` を返す `String#shout` を作る。レシーバは変えない。")],
+    hints: [note("文字列の末尾に C の文字列をつなげるには `rb_str_cat_cstr(str, \"?\")` のように書きます。")],
     answer: [c(`
 static VALUE
 str_shout(VALUE self)
@@ -163,9 +163,10 @@ end`),
     title: "Integer#triple",
     file: "numeric",
     body: [
-      p("`rb_int_mul(x, y)` は、結果が Fixnum に収まらなければ Bignum を返します。"),
+      p("`rb_int_mul(x, y)` は、Integer の `x` と `y` を掛けた値を返します（Ruby の `x * y`）。結果が Fixnum に収まらなければ Bignum を返します。"),
     ],
     task: [p("`7.triple` が `21` を返し、`(2**70).triple` も正しく計算する `Integer#triple` を作る。")],
+    hints: [note("C の整数から Ruby の Integer（Fixnum）を作るには `INT2FIX(42)` のように書きます。")],
     answer: [c(`
 static VALUE
 int_triple(VALUE self)
@@ -205,7 +206,7 @@ end`),
     body: [
       p("`rb_hash_foreach(hash, func, arg)` は要素ごとに `func(key, value, arg)` を呼びます。続けるなら `ST_CONTINUE` を返します。"),
     ],
-    task: [p("値の合計を返す `Hash#sum_values` を作る。空のハッシュなら `0` を返す。値に `Float` が混ざっていてもよい。")],
+    task: [p("全ての value の合計を返す `Hash#sum_values` を作る。`{ a: 1, b: 2 }.sum_values` なら `3`、空のハッシュなら `0` を返す。value に `Float` が混ざっていてもよい。")],
     answer: [c(`
 static int
 sum_values_i(VALUE key, VALUE value, VALUE arg)
@@ -256,6 +257,7 @@ end`),
       p("`nil.to_s` の実体は `object.c` の `rb_nil_to_s` です。式展開（`#{nil}`）では、`NilClass#to_s` が再定義されていなければ、`vm_insnhelper.c` の `vm_objtostring` がこの関数を直接呼びます。"),
     ],
     task: [p("`nil.to_s` が `\"(nil)\"` を返すようにする。")],
+    hints: [note("C の文字列から Ruby の String を作るには `rb_str_new_cstr(\"hoge\")` のように書きます。")],
     answer: [c(`
 VALUE
 rb_nil_to_s(VALUE obj)
