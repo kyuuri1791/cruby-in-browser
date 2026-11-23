@@ -195,9 +195,9 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
 
   /** make だけ、または ./ruby（bin/rspec は shebang の通り ruby で実行する）だけを走らせる */
   const execute = async (command: string) => {
-    const makefile = textOf(MAKEFILE);
-    if (makefile === undefined) return;
     setRunning(true);
+    // 開いた直後で Makefile をまだ読み込んでいなければ、待ってから実行する（押したのに何も起きない、をなくす）
+    const makefile = textOf(MAKEFILE) ?? (await loadOriginal(MAKEFILE));
     const sources: Record<string, string> = { ...edits };
     delete sources[MAKEFILE];
     const isMake = command === "make";
