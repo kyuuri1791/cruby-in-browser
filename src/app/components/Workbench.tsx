@@ -43,8 +43,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
   const specFile = current.spec ? specPath(current.slug) : null;
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // 開いているファイル（タブ）と、今表示しているファイル
-  const [tabs, setTabs] = useState<string[]>(() => (initialFile ? [initialFile, MAIN] : [MAIN]));
+  // 開いているファイル（タブは 1 つだけで、別のファイルを開くと差し替える）
   const [file, setFile] = useState<string | null>(initialFile ?? MAIN);
   const explorer = useResizable(190, 120, 360, "x");
   const panel = useResizable(260, 120, 640, "y", true);
@@ -209,21 +208,11 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
     if (status === "timeout") addLine({ kind: "stderr", text: `Killed (time limit: ${RUN_TIME_LIMIT_MS / 1000}s)` });
   };
 
-  const openFile = (name: string) => {
-    setTabs((t) => (t.includes(name) ? t : [...t, name]));
-    setFile(name);
-  };
+  const openFile = (name: string) => setFile(name);
 
   useImperativeHandle(ref, () => ({
     openFile,
   }));
-
-  const closeTab = (name: string) => {
-    const i = tabs.indexOf(name);
-    const next = tabs.filter((t) => t !== name);
-    setTabs(next);
-    if (name === file) setFile(next[Math.min(i, next.length - 1)] ?? null);
-  };
 
   const jumpTo = (target: string, line: number, col: number) => {
     if (target === file) {
@@ -243,7 +232,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
     name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").at(-1)! : (files.find((f) => f.name === name)?.label ?? `${name}.c`);
   const pathOf = (name: string) =>
     name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").join(" › ") : `ruby › ${labelOf(name)}`;
-  const Icon = ({ name }: { name: string }) =>
+  const icon = (name: string) =>
     name === MAKEFILE ? (
       <span className="file-icon mk-icon" aria-hidden="true">mk</span>
     ) : isRuby(name) ? (
@@ -253,7 +242,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
     ) : (
       <span className="file-icon c-icon" aria-hidden="true">C</span>
     );
-  const Mark = ({ name }: { name: string }) =>
+  const mark = (name: string) =>
     !isRuby(name) && name in edits ? <span className="modified" aria-label="変更あり">M</span> : null;
   const treeItem = (name: string, depth: number) => (
     <li key={name} role="treeitem" aria-selected={name === file}>
@@ -262,9 +251,9 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
         style={{ paddingLeft: 10 + depth * 14 }}
         onClick={() => openFile(name)}
       >
-        <Icon name={name} />
+        {icon(name)}
         <span className={!isRuby(name) && name in edits ? "name modified-name" : "name"}>{labelOf(name)}</span>
-        <Mark name={name} />
+        {mark(name)}
       </button>
     </li>
   );
@@ -306,16 +295,16 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
 
       <div className="wb-main" style={{ gridTemplateRows: `auto auto minmax(0, 1fr) 1px ${panel.size}px` }}>
         <div className="wb-tabs" role="tablist" aria-label="開いているファイル">
-          {tabs.map((name) => (
-            <div key={name} className={name === file ? "tab active" : "tab"}>
-              <button role="tab" aria-selected={name === file} className="tab-label" onClick={() => setFile(name)}>
-                <Icon name={name} />
-                <span className={!isRuby(name) && name in edits ? "modified-name" : ""}>{labelOf(name)}</span>
-                <Mark name={name} />
-              </button>
-              <button className="tab-close" onClick={() => closeTab(name)} aria-label={`${labelOf(name)} を閉じる`} title="閉じる">×</button>
+          {file && (
+            <div className="tab active">
+              <span role="tab" aria-selected className="tab-label">
+                {icon(file)}
+                <span className={!isRuby(file) && file in edits ? "modified-name" : ""}>{labelOf(file)}</span>
+                {mark(file)}
+              </span>
+              <button className="tab-close" onClick={() => setFile(null)} aria-label={`${labelOf(file)} を閉じる`} title="閉じる">×</button>
             </div>
-          ))}
+          )}
         </div>
         <div className="wb-toolbar">
           <span className="wb-file">{file ? pathOf(file) : ""}</span>
