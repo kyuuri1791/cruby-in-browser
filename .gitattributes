@@ -1,0 +1,5 @@
+# GitHub の言語の統計から外すもの
+# Ruby のソースのコピー（ruby/ruby から持ってきたもの）
+public/cruby/assets/src/** linguist-vendored
+# ruby-build/prepare.mjs が作った素材
+public/cruby/assets/** linguist-generated
