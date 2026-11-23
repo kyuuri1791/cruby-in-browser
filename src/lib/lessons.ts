@@ -92,7 +92,7 @@ end`),
       p("配列の要素は `rb_ary_entry(ary, i)` で取れます（範囲外は `nil`）。"),
     ],
     task: [p("`[1, 2, 3].second` が `2`、`[1].second` が `nil` を返す `Array#second` を作る。")],
-    hints: [note("`Init_Array` の先頭ではまだ `rb_cArray` が作られていません。`\"push\"` を登録している行の近くに書いてください。")],
+    hints: [note("`rb_cArray` は `Init_Array` の中の `rb_define_class` で作られるので、登録はそれより後に書きます。`\"push\"` を登録している行の近くに書くと確実です。")],
     answer: [c(`
 static VALUE
 ary_second(VALUE self)
@@ -253,7 +253,7 @@ end`),
     title: "nil.to_s",
     file: "object",
     body: [
-      p("`nil.to_s` は `object.c` の `rb_nil_to_s` です。式展開（`#{nil}`）でも、`vm_insnhelper.c` の `vm_objtostring` がこの関数を直接呼びます。"),
+      p("`nil.to_s` の実体は `object.c` の `rb_nil_to_s` です。式展開（`#{nil}`）では、`NilClass#to_s` が再定義されていなければ、`vm_insnhelper.c` の `vm_objtostring` がこの関数を直接呼びます。"),
     ],
     task: [p("`nil.to_s` が `\"(nil)\"` を返すようにする。")],
     answer: [c(`
@@ -281,14 +281,14 @@ end`),
     title: "Object#immediate?",
     file: "object",
     body: [
-      p("Ruby のオブジェクトは、C では全て `VALUE` という整数です。多くは、メモリ上のオブジェクトを指すポインタです。ただし、小さな整数、シンボル、`nil`・`true`・`false` はオブジェクトを作らず、値を `VALUE` そのものに埋め込みます（即値）。たとえば Fixnum の `n` は `(n << 1) | 1` で、`nil` は `Qnil` という決まった値です。"),
+      p("Ruby のオブジェクトは、C では全て `VALUE` 型（ポインタと同じ大きさの整数）で扱います。多くの `VALUE` は、メモリ上のオブジェクトを指すポインタです。ただし、小さな整数、シンボル、`nil`・`true`・`false` はオブジェクトを作らず、値を `VALUE` そのものに埋め込みます（即値）。たとえば Fixnum の `n` は `(n << 1) | 1` で、`nil` は `Qnil` という決まった値です。"),
       c(`
 static inline bool
 RB_SPECIAL_CONST_P(VALUE obj)
 {
     return (obj == RUBY_Qfalse) || RB_IMMEDIATE_P(obj);
 }`),
-      p("このサイトの Ruby は wasm32 向けなので、`VALUE` は 32 ビットです。64 ビットの環境と違い、Fixnum に入るのは 30 ビットまでで、`Float` は即値（flonum）になりません。"),
+      p("このサイトの Ruby は wasm32 向けなので、`VALUE` は 32 ビットです。64 ビットの環境と違い、Fixnum の範囲は `-2**30` から `2**30 - 1` までで、`Float` は即値（flonum）になりません。"),
     ],
     task: [p("即値なら `true`、そうでなければ `false` を返す `Object#immediate?` を作る。")],
     hints: [note("即値かどうかは `RB_SPECIAL_CONST_P(obj)` で、C の真偽値を Ruby の値にするのは `RBOOL(…)` です。登録は `InitVM_Object` に書いてください。")],
@@ -577,7 +577,7 @@ end`),
     title: "Kernel#try",
     file: "vm_eval",
     body: [
-      p("`Init_vm_eval` を見ると、`send` は C の関数ではなく、VM が特別扱いする種類（`VM_METHOD_TYPE_OPTIMIZED`）のメソッドとして登録されています。C からメソッドを呼ぶ関数もここにあり、`rb_check_funcall` は、メソッドがあれば呼んで結果を返し、なければ `Qundef` を返します。"),
+      p("`Init_vm_eval` を見ると、`send` は `rb_define_method` では登録されていません。VM が直接処理する種類（`VM_METHOD_TYPE_OPTIMIZED`）のメソッドとして登録されています。C からメソッドを呼ぶ関数もここにあり、`rb_check_funcall` は、呼べるメソッドがあれば呼んで結果を返し、なければ `Qundef` を返します。"),
       c(`
 VALUE
 rb_check_funcall(VALUE recv, ID mid, int argc, const VALUE *argv)
@@ -672,13 +672,20 @@ end`),
     title: "method_missing",
     file: "vm_eval",
     body: [
-      p("メソッドが見つからないと、VM は `vm_eval.c` の `method_missing` を呼びます。`method_missing` を定義したクラスなら、それを Ruby のメソッドとして呼びます。定義していなければ（`METHOD_ENTRY_BASIC(me)`）、Ruby のメソッドは呼ばずに、すぐ `raise_method_missing` で例外を作ります。"),
+      p("Ruby のコードで見つからないメソッドを呼ぶと、VM は呼び出しを `method_missing(:名前, 引数…)` に書き換えて呼び直します。書き換えるのは `vm_insnhelper.c` の `vm_call_method_missing_body` です。"),
       c(`
-    me = rb_callable_method_entry(klass, idMethodMissing);
-    if (!me || METHOD_ENTRY_BASIC(me)) goto missing;
-    vm_passed_block_handler_set(ec, block_handler);
-    result = rb_vm_call_kw(ec, obj, idMethodMissing, argc, argv, me, kw_splat);`),
-      p("`NoMethodError` のメッセージの書式は、その先の `rb_make_no_method_exception` で決まります。"),
+    /* shift arguments: m(a, b, c) #=> method_missing(:m, a, b, c) */
+    ...
+    argv[0] = ID2SYM(vm_ci_mid(orig_ci));`),
+      p("`method_missing` を定義していなければ、`BasicObject#method_missing` の実体である `vm_eval.c` の `rb_method_missing` が呼ばれます。そこから `raise_method_missing` が `NoMethodError` を作ります。メッセージの書式は、その先の `rb_make_no_method_exception` で決まります。"),
+      c(`
+static VALUE
+rb_method_missing(int argc, const VALUE *argv, VALUE obj)
+{
+    rb_execution_context_t *ec = GET_EC();
+    raise_method_missing(ec, argc, argv, obj, ec->method_missing_reason);
+    UNREACHABLE_RETURN(Qnil);
+}`),
     ],
     task: [p("見つからないメソッドを呼んだときのメッセージを、`undefined method 'foo' for …` から `no such method 'foo' for …` に変える。")],
     answer: [c(`
@@ -765,8 +772,8 @@ end`),
     title: "opt_plus 命令",
     file: "vm_insnhelper",
     body: [
-      p("`a + b` はメソッド呼び出しではなく、YARV の `opt_plus` 命令にコンパイルされます。`RubyVM::InstructionSequence.compile(\"a + b\").disasm` で確かめられます。"),
-      p("`opt_plus` は `vm_insnhelper.c` の `vm_opt_plus` を呼びます。両方が Fixnum で、`Integer#+` が再定義されていなければ（`OP_UNREDEFINED_P`）、メソッドを探さずにその場で足します。当てはまらなければ `Qundef` を返し、普通のメソッド呼び出しに戻ります。"),
+      p("Ruby から見ると `a + b` は `a.+(b)` というメソッド呼び出しですが、YARV は普通の呼び出しの命令（`send`）ではなく、`+` 専用の `opt_plus` 命令にコンパイルします。`RubyVM::InstructionSequence.compile(\"a + b\").disasm` で確かめられます。"),
+      p("`opt_plus` は `vm_insnhelper.c` の `vm_opt_plus` を呼びます。両方が Fixnum で、`Integer#+` が再定義されていなければ（`OP_UNREDEFINED_P`）、メソッドを探して呼ぶ手順を省き、その場で足します。結果は `Integer#+` を呼んだときと同じです。当てはまらなければ `Qundef` を返し、普通のメソッド呼び出しの手順に戻ります。"),
       c(`
 static VALUE
 vm_opt_plus(VALUE recv, VALUE obj)

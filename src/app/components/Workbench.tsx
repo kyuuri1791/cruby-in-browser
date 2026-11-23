@@ -258,7 +258,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
   const treeItem = (name: string, depth: number) => (
     <li key={name} role="treeitem" aria-selected={name === file}>
       <button
-        className={`wb-tree-item${name === file ? " active" : ""}${isBinary(name) ? " binary" : ""}`}
+        className={`wb-tree-item${name === file ? " active" : ""}${isBinary(name) ? " binary" : isReadOnly(name) ? " readonly" : ""}`}
         style={{ paddingLeft: 10 + depth * 14 }}
         onClick={() => openFile(name)}
       >

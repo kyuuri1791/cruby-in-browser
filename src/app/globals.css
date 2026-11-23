@@ -141,7 +141,8 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 .wb-tree-item:hover:not(:disabled) { background: var(--hover); }
 .wb-tree-item.active { background: var(--selection); }
 .wb-tree-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wb-tree-item.binary .name { color: var(--muted); }
+/* バイナリと編集できないファイルは薄く出す */
+.wb-tree-item.binary .name, .wb-tree-item.readonly .name { color: var(--muted); }
 .file-icon { display: inline-block; min-width: 18px; text-align: center; font-weight: 700; font-size: 10px; font-family: var(--sans); letter-spacing: -0.02em; }
 .c-icon { color: #3178c6; }
 .rb-icon { color: var(--accent); }
