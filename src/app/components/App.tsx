@@ -21,12 +21,14 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
   const index = Math.max(0, lessons.findIndex((l) => l.slug === slug));
   const lesson = lessons[index];
   const specs = lessons.filter((l) => l.spec).map((l) => ({ slug: l.slug, spec: l.spec! }));
+  const [tocOpen, setTocOpen] = useState(false);
   const [firstFile] = useState(() => lessons.find((l) => l.slug === initialSlug)?.file ?? null);
 
   const show = (next: string, push: boolean) => {
     const l = lessons.find((x) => x.slug === next);
     if (!l) return;
     setSlug(next);
+    setTocOpen(false);
     if (push) window.history.pushState(null, "", next === lessons[0].slug ? "/" : `/?lesson=${next}`);
     if (l.file) workbench.current?.openFile(l.file);
     textRef.current?.scrollTo({ top: 0 });
@@ -54,7 +56,12 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
       lesson={
         <div className="lesson-pane-inner">
           <nav className="lesson-toc" aria-label="目次">
-            <ol>
+            <button className="toc-toggle" aria-expanded={tocOpen} onClick={() => setTocOpen(!tocOpen)}>
+              <span className="chevron" aria-hidden="true">{tocOpen ? "⌄" : "›"}</span>
+              目次
+              <span className="toc-count">{index} / {lessons.length - 1}</span>
+            </button>
+            {tocOpen && <ol>
               {lessons.map((l, i) => (
                 <li key={l.slug}>
                   <button className={l.slug === slug ? "toc-item active" : "toc-item"} aria-current={l.slug === slug ? "page" : undefined} onClick={() => show(l.slug, true)}>
@@ -63,7 +70,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
                   </button>
                 </li>
               ))}
-            </ol>
+            </ol>}
           </nav>
           <div className="lesson-scroll" ref={textRef}>
             <article className="lesson-text" key={lesson.slug}>

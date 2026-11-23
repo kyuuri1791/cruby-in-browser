@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import AboutDialog from "./components/AboutDialog";
+import SiteTitle from "./components/SiteTitle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="ja">
       <body>
         <header className="site-header">
-          <Link href="/" className="site-title">ブラウザで CRuby</Link>
+          <SiteTitle />
           <nav>
             <AboutDialog />
           </nav>

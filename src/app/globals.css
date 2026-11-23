@@ -81,13 +81,18 @@ button.link:hover { text-decoration: underline; background: none; }
 .about-dialog li { margin-bottom: 4px; }
 
 /* 全体の並び: 教材 | 作業台 */
-.lesson { display: grid; grid-template-columns: var(--lesson-w, 400px) 1px minmax(0, 1fr); height: calc(100vh - var(--header-h)); }
+.lesson { display: grid; grid-template-columns: var(--lesson-w, 480px) 1px minmax(0, 1fr); height: calc(100vh - var(--header-h)); }
 .lesson-pane { min-width: 0; min-height: 0; display: grid; background: var(--bg); }
 .lesson-pane-inner { display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; }
 .lesson-scroll { overflow-y: auto; min-height: 0; }
 
 /* 目次 */
-.lesson-toc { border-bottom: 1px solid var(--border); background: var(--chrome); padding: 6px 0; }
+.lesson-toc { border-bottom: 1px solid var(--border); background: var(--chrome); }
+.lesson-toc ol { padding-bottom: 6px !important; }
+.toc-toggle { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 16px 6px 12px; border: none; border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
+.toc-toggle:hover { background: var(--hover); color: var(--fg); }
+.toc-toggle .chevron { width: 16px; text-align: center; }
+.toc-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
 .lesson-toc ol { list-style: none; margin: 0; padding: 0; }
 .toc-item { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 3px 16px 3px 13px; border: none; border-left: 3px solid transparent; border-radius: 0; background: transparent; color: var(--fg); font-size: 13px; text-align: left; line-height: 1.6; }
 .toc-item:hover:not(:disabled) { background: var(--hover); }
