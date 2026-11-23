@@ -15,8 +15,8 @@ export async function launch(base, viewport = { width: 1440, height: 900 }) {
   const h = {
     browser,
     page,
-    // 最後の待ち受けのプロンプト（$ ▍）は除く
-    out: () => page.$eval('.wb-output', (e) => e.innerText.replace(/\n?\$ ▍\s*$/, '')),
+    // 最後の待ち受けのプロンプト（$）は除く
+    out: () => page.$eval('.wb-output', (e) => e.innerText.replace(/\n?\$\s*$/, '')),
     // 実行中は実行ボタンが押せなくなる。押せるようになったら終わり
     waitIdle: () => page.waitForFunction(() => [...document.querySelectorAll('.wb-term-head button.run-cmd')].every((b) => !b.disabled), { timeout: 300000 }),
     waitEditor: () => page.waitForSelector('.cm-content', { timeout: 60000 }),

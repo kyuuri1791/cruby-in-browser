@@ -179,11 +179,11 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
 
   // 出力は実行のたびに消さずに追記していく（古い行から捨てる）
   const MAX_LINES = 5000;
-  const scrollOutput = () => requestAnimationFrame(() => outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight }));
-  const addLine = (l: OutputLine) => {
-    setLines((ls) => (ls.length >= MAX_LINES ? [...ls.slice(ls.length - MAX_LINES + 1), l] : [...ls, l]));
-    scrollOutput();
-  };
+  const addLine = (l: OutputLine) => setLines((ls) => (ls.length >= MAX_LINES ? [...ls.slice(ls.length - MAX_LINES + 1), l] : [...ls, l]));
+  // 行が増えたときと、終わって最後のプロンプトを出したときに、一番下までスクロールする
+  useEffect(() => {
+    outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight });
+  }, [lines, running]);
 
   /** /work に置くファイル（main.rb、spec、bin/rspec） */
   const rubyFiles = () => {
@@ -194,6 +194,8 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
 
   /** make だけ、または ./ruby（bin/rspec は shebang の通り ruby で実行する）だけを走らせる */
   const execute = async (command: string) => {
+    // 待ち受けの $ を、そのままコマンドの行に置き換える（$ が消えてから出直す、のちらつきをなくす）
+    addLine({ kind: "prompt", text: `$ ${command}` });
     setRunning(true);
     // 開いた直後で Makefile をまだ読み込んでいなければ、待ってから実行する（押したのに何も起きない、をなくす）
     const makefile = textOf(MAKEFILE) ?? (await loadOriginal(MAKEFILE));
@@ -203,7 +205,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
     // ボタンのコマンドは決まった形（./ruby main.rb と bin/rspec spec/…）なので、空白で分ければよい
     const words = command.split(" ");
     const args = isMake ? null : words[0] === "./ruby" ? words.slice(1) : words;
-    const status = await getRunner().run({ sources, makefile, files: rubyFiles(), make: isMake, args, prompt: command }, addLine);
+    const status = await getRunner().run({ sources, makefile, files: rubyFiles(), make: isMake, args }, addLine);
     setRunning(false);
     if (status === "timeout") addLine({ kind: "stderr", text: `Killed (time limit: ${RUN_TIME_LIMIT_MS / 1000}s)` });
   };
@@ -349,12 +351,8 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
             {lines.map((l, i) => (
               <OutputRow key={i} line={l} onJump={jumpTo} />
             ))}
-            {/* 実行中はカーソルだけ。終わったら、本物のターミナルと同じく次のプロンプトを出す */}
-            {running ? (
-              <span className="o-cursor blink" aria-hidden="true">▍</span>
-            ) : (
-              <div className="o-prompt" aria-hidden="true">$ <span className="o-cursor blink">▍</span></div>
-            )}
+            {/* 終わったら、本物のターミナルと同じく次のプロンプトを出す（実行中は出さない） */}
+            {!running && <div className="o-prompt" aria-hidden="true">$</div>}
           </div>
         </section>
       </div>

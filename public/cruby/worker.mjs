@@ -8,15 +8,14 @@
 // ファイルは Worker の中の仮想ファイルシステムに置き、ページを開いている間は保たれる。
 //
 // 受け取るメッセージ:
-//   { type: 'run', id, sources, makefile, files, make, args, prompt }
+//   { type: 'run', id, sources, makefile, files, make, args }
 //     make     … true なら make だけ、false なら ./ruby だけを実行する
 //     sources  … 編集された C のファイルだけ（{ array: '...' }）。無いものは元のソース
 //     makefile … Makefile の中身
 //     files    … /work に置くファイル（{ 'main.rb': '...', 'spec/x_spec.rb': '...' }）
 //     args     … ruby に渡す引数
-//     prompt   … 出力の欄に出すコマンド行（'./ruby main.rb'）
 // 返すメッセージ:
-//   { type: 'prompt' | 'cmd' | 'stdout' | 'stderr' | 'crash' | 'error', id, text }
+//   { type: 'cmd' | 'stdout' | 'stderr' | 'crash' | 'error', id, text }
 //   { type: 'phase', id }   … ./ruby を起動した（ここから時間制限を数える）
 //   { type: 'make-failed' | 'done', id }
 //   { type: 'files', files: [path] }   … 仮想ファイルシステムのファイル一覧（ヘッダとソースを除く）
@@ -167,12 +166,11 @@ const COMMANDS = createCommands({
 });
 
 // ---- 実行 ----
-async function run({ id, sources = {}, makefile, files = {}, make: doMake = false, args = null, prompt }) {
+async function run({ id, sources = {}, makefile, files = {}, make: doMake = false, args = null }) {
   const post = (msg) => self.postMessage({ id, ...msg });
   const manifest = await loadManifest();
   await initVfs();
   syncSources(manifest, sources);
-  if (prompt) post({ type: 'prompt', text: `$ ${prompt}` });
 
   const out = { stdout: (text) => post({ type: 'stdout', text }), stderr: (text) => post({ type: 'stderr', text }) };
   if (doMake) {

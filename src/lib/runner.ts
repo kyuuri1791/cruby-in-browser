@@ -17,8 +17,6 @@ export type RunRequest = {
   make: boolean;
   /** ruby に渡す引数（make だけの時は null） */
   args: string[] | null;
-  /** 出力の欄に出すコマンド行 */
-  prompt: string;
 };
 
 export type RunStatus = "done" | "make-failed" | "error" | "timeout";
@@ -26,7 +24,7 @@ export type RunStatus = "done" | "make-failed" | "error" | "timeout";
 export type FileInfo = { size: number; kind: "pie" | "shared" | "object" | "module" };
 
 // public/cruby/worker.mjs とのやり取りの形を変えたら上げる（古い Worker がブラウザのキャッシュに残らないように）
-const WORKER_VERSION = 18;
+const WORKER_VERSION = 19;
 
 /** ./ruby の実行の時間制限 */
 export const RUN_TIME_LIMIT_MS = 10_000;
@@ -84,7 +82,6 @@ class Runner {
         // ./ruby が長く動き続けたら（無限ループなど）、Worker ごと止める
         this.timer = setTimeout(() => this.kill(), RUN_TIME_LIMIT_MS);
         break;
-      case "prompt":
       case "cmd":
       case "stdout":
       case "stderr":

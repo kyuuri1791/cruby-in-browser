@@ -184,7 +184,6 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 .o-prompt:first-child { margin-top: 0; }
 .o-cmd { color: var(--muted); }
 .o-stderr, .o-error { color: var(--ng); }
-.o-cursor { color: var(--muted); }
 .diag { margin: 0; font-family: inherit; white-space: pre-wrap; }
 .diag-link { border: none; background: none; padding: 0; border-radius: 0; color: inherit; font: inherit; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 2px; }
 .diag-link:hover:not(:disabled) { background: none; color: var(--focus); text-decoration-color: var(--focus); }
@@ -198,8 +197,6 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 .a-magenta { color: #8250df; }
 .a-cyan { color: #1b7c83; }
 .a-white { color: #6e7781; }
-.blink { animation: blink 1.2s infinite; }
-@keyframes blink { 50% { opacity: 0.2; } }
 
 /* バイナリのファイル */
 .binary-info { padding: 20px 24px; color: var(--muted); font-size: 13px; }
