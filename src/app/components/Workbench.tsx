@@ -272,7 +272,8 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
     const open = !collapsed.has(label);
     return (
       <li key={`dir:${label}`} role="treeitem" aria-expanded={open} aria-selected={false} className="wb-tree-folder-item">
-        <button className="wb-tree-folder" onClick={() => toggleFolder(label)}>
+        {/* 中身が全てバイナリか編集できないファイルなら、フォルダも薄く出す */}
+        <button className={`wb-tree-folder${children.every((c) => isBinary(c) || isReadOnly(c)) ? " readonly" : ""}`} onClick={() => toggleFolder(label)}>
           <span className="chevron" aria-hidden="true">{open ? "⌄" : "›"}</span> {label}
         </button>
         {open && <ul role="group" className="wb-tree-group">{children.map((c) => treeItem(c, 1))}</ul>}
