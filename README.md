@@ -46,7 +46,7 @@ dev サーバーを起動した状態で実行します。Chromium が必要で�
 
 ```sh
 node scripts/e2e/smoke.mjs http://localhost:3000     # 画面と make・実行の一通り
-node scripts/e2e/answers.mjs http://localhost:3000   # 全課題の答えの例で spec が通るか
+node scripts/e2e/answers.mjs http://localhost:3000   # 全課題の解答例で spec が通るか
 ```
 
 画面に出る日本語は textlint で検査します（`npm run lint:ja`）。

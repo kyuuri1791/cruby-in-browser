@@ -1,4 +1,4 @@
-// 各章の「答えの例」を当てはめて、課題チェック（spec）が全部通ることを確かめる
+// 各課題の解答例を当てはめて、spec が全部通ることを確かめる
 //   node scripts/e2e/answers.mjs [http://127.0.0.1:3123]
 import { launch, answers } from './helpers.mjs';
 

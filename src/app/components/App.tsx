@@ -83,7 +83,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
               )}
               {lesson.answer && (
                 <details className="hint">
-                  <summary>答えの例</summary>
+                  <summary>解答例</summary>
                   <LessonBody blocks={lesson.answer} />
                 </details>
               )}
