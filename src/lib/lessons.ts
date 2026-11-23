@@ -35,6 +35,7 @@ export const specPath = (slug: string) => {
 const p = (text: string): Block => ({ type: "p", text });
 const c = (code: string): Block => ({ type: "code", lang: "c", code: code.trim() });
 const rb = (code: string): Block => ({ type: "code", lang: "ruby", code: code.trim() });
+const txt = (code: string): Block => ({ type: "code", lang: "text", code: code.trim() });
 const list = (...items: string[]): Block => ({ type: "list", items });
 const note = (text: string): Block => ({ type: "note", text });
 const spec = (code: string) => `${code.trim()}\n`;
@@ -337,7 +338,8 @@ end`),
     title: "Proc#kind",
     file: "proc",
     body: [
-      p("`Proc` の中身は `rb_proc_t` 構造体で、`GetProcPtr(procval, proc)` で取り出せます。lambda かどうかは `proc->header.is_lambda` に入っていて、`Proc#lambda?` はそれを返すだけです。"),
+      p("Ruby から見ると、proc と lambda はどちらも `Proc` クラスのオブジェクトで、違うのは引数の扱いと `return` の意味です。C では、どちらも同じ `rb_proc_t` 構造体で表し、lambda かどうかはフラグ 1 つ（`header.is_lambda`）で区別しています。`lambda {}` や `->` で作るとこのフラグが立ち、`proc {}` や `Proc.new` では立ちません。引数をどう受け取るかは、呼ぶときにこのフラグを見て決めます。"),
+      p("C の関数には `Proc` オブジェクトが `VALUE` として渡ってくるので、`GetProcPtr(procval, proc)` で中の `rb_proc_t` を取り出します。`Proc#lambda?` は、取り出したフラグをそのまま返しているだけです。"),
       c(`
 VALUE
 rb_proc_lambda_p(VALUE procval)
@@ -389,7 +391,8 @@ end`),
     title: "Module#define_private_method",
     file: "proc",
     body: [
-      p("`define_method` の本体は `rb_mod_define_method` です。今の可視性（`private` の後かどうか）を `CREF_SCOPE_VISI(cref)` から読み、`rb_mod_define_method_with_visibility` に渡します。`private` の後に `define_method` で定義したメソッドが private になるのは、このためです。"),
+      p("引数なしの `private` を書くと、その後に `def` で定義するメソッドが private になります。この「今の可視性」は、`class Foo ... end` の本体ごとに VM が持つ cref（`rb_cref_t`）に入っています。cref は、その場所で定数やメソッドを定義する先のクラスと、可視性（`scope_visi`）を持つ構造体です。`private` はこの `scope_visi` を書き換え、`def` はそれを読んで可視性を決めます。"),
+      p("`define_method` も同じ cref を見ます。本体は `proc.c` の `rb_mod_define_method` です。`rb_vm_cref_in_context` は、`define_method` がそのクラスの本体から直接呼ばれたときだけ cref を返します。返ってくれば `CREF_SCOPE_VISI(cref)` の可視性を使い、そうでなければ（`Foo.define_method(...)` のように外から呼んだときなど）public にします。実際にメソッドを定義するのは、可視性を受け取る `rb_mod_define_method_with_visibility` です。"),
       c(`
 VALUE
 rb_mod_define_method(int argc, VALUE *argv, VALUE mod)
@@ -449,7 +452,18 @@ end`),
     title: "Module#mixins",
     file: "class",
     body: [
-      p("`include` や `prepend` をすると、モジュールを指す `T_ICLASS` の内部クラスが作られ、スーパークラスの連なり（`RCLASS_SUPER`）に挟み込まれます。`Module#ancestors` は、この連なりをたどって並べています。"),
+      p("CRuby のクラスは、スーパークラスへのポインタ（`RCLASS_SUPER`）でつながっています。メソッド探索は、この連なりを先頭からたどります。"),
+      p("`include A` をすると、A のメソッド表を共有する内部クラス（`T_ICLASS`、以下 iclass）が作られ、クラスとスーパークラスの間に挟み込まれます。iclass の `METACLASS_OF(p)`（`RBASIC(p)->klass`）は、元のモジュール A を指しています。"),
+      txt(`
+class C; include A; end
+
+C → iclass(A) → Object → iclass(Kernel) → BasicObject`),
+      p("`prepend B` では B を C より前に置きたいのですが、連なりの先頭は C 自身のままにしておく必要があります（定数 `C` や `C.new` が指すのはこのオブジェクトです）。そこで最初の `prepend` のときに、`ensure_origin` が origin という iclass を作り、C のメソッド表をそちらへ移します。C は空になり、その後ろに B、origin の順に並びます。以後 C に定義したメソッドも origin に入ります。"),
+      txt(`
+class C; include A; prepend B; end
+
+C（空）→ iclass(B) → origin（C のメソッド）→ iclass(A) → Object → …`),
+      p("`Module#ancestors` はこの連なりをたどって並べます。"),
       c(`
     for (p = mod; p; p = RCLASS_SUPER(p)) {
         if (p == refined_class) break;
@@ -461,7 +475,7 @@ end`),
             rb_ary_push(ary, p);
         }
     }`),
-      p("`prepend` されたクラスは、自分のメソッドを移した origin（これも `T_ICLASS`）を連なりの後ろに作ります。`p != RCLASS_ORIGIN(p)` は、元のクラスを飛ばして origin の位置で数えるための条件です。"),
+      p("`RCLASS_ORIGIN(p)` は、origin があればそれを、なければ `p` 自身を返します。`p != RCLASS_ORIGIN(p)` が真になるのは、origin を持つ C 本体だけで、ここは飛ばします。代わりに origin の位置で、`METACLASS_OF(origin)` つまり C を入れます。こうして `C.ancestors` は `[B, C, A, …]` になります。"),
     ],
     task: [p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。")],
     hints: [note("`ancestors` は `object.c` の `InitVM_Object` で登録されています。関数は `class.c` に書き、`object.c` で同じように登録してください。`object.c` には、`InitVM_Object` より前に関数の宣言が要ります。")],
@@ -512,7 +526,14 @@ end`),
     title: "Module#attr_predicate",
     file: "object",
     body: [
-      p("`attr_reader` で定義したメソッドは、Ruby のコードを持ちません。`vm_method.c` の `rb_attr` が、インスタンス変数を読むだけの種類（`VM_METHOD_TYPE_IVAR`）のメソッドとして登録します。"),
+      p("CRuby のメソッドは、クラスのメソッド表に、名前をキーにしたエントリ（`rb_method_entry_t`）として入っています。エントリが指す定義（`rb_method_definition_t`）には種類があり、呼ぶときは種類ごとに処理が分かれます。"),
+      list(
+        "`VM_METHOD_TYPE_ISEQ`: `def` で書いたメソッド。コンパイルした命令列を実行する",
+        "`VM_METHOD_TYPE_CFUNC`: `rb_define_method` で登録した C の関数",
+        "`VM_METHOD_TYPE_IVAR`: `attr_reader` のメソッド。インスタンス変数の名前だけを持ち、呼ぶとその値を返す",
+        "`VM_METHOD_TYPE_BMETHOD`: `define_method` にブロックを渡して定義したメソッド",
+      ),
+      p("`attr_reader :name` は Ruby のコードも C の関数も作りません。`vm_method.c` の `rb_attr` が、`@name` という ID を持つ `VM_METHOD_TYPE_IVAR` のメソッドを `rb_add_method` で登録するだけです。"),
       c(`
     attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
     if (read) {
@@ -579,14 +600,20 @@ end`),
     title: "Kernel#try",
     file: "vm_eval",
     body: [
-      p("`Init_vm_eval` を見ると、`send` は `rb_define_method` では登録されていません。VM が直接処理する種類（`VM_METHOD_TYPE_OPTIMIZED`）のメソッドとして登録されています。C からメソッドを呼ぶ関数もここにあり、`rb_check_funcall` は、呼べるメソッドがあれば呼んで結果を返し、なければ `Qundef` を返します。"),
+      p("`vm_eval.c` には、C から Ruby のメソッドを呼ぶための関数が集まっています（単独ではコンパイルされず、`vm.c` に `#include` されています）。String#shout で使った `rb_funcall` もその 1 つです。`rb_funcall` は、メソッドが見つからなければ Ruby で呼んだときと同じく `NoMethodError` になります。"),
+      p("`rb_check_funcall` は、メソッドがなくても例外にしない版です。次の順に確かめ、呼べなければ `Qundef`（「値がない」ことを表す、Ruby からは見えない特別な `VALUE`）を返します。"),
+      list(
+        "`respond_to?` が再定義されていて、偽を返したら呼ばない",
+        "メソッドが見つかれば呼んで、結果を返す",
+        "見つからなければ、`respond_to_missing?` が真で、`method_missing` が定義されているときだけ、`method_missing` を呼ぶ",
+      ),
+      p("CRuby の中では、暗黙の型変換（`to_ary` や `to_str` があれば使う、など）の確かめに使われています。"),
       c(`
 VALUE
 rb_check_funcall(VALUE recv, ID mid, int argc, const VALUE *argv)
 {
     return rb_check_funcall_default_kw(recv, mid, argc, argv, Qundef, RB_NO_KEYWORDS);
 }`),
-      p("`vm_eval.c` は単独ではコンパイルされず、`vm.c` に `#include` されています。"),
     ],
     task: [p("`obj.try(:name, *args)` で、メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。")],
     hints: [note("`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
@@ -629,7 +656,17 @@ end`),
     title: "Kernel#tap_eval",
     file: "vm_eval",
     body: [
-      p("`instance_eval` と `instance_exec` は、`vm_eval.c` の `yield_under` で、ブロックの中の `self` をレシーバに切り替えてから実行します。C から使うときは `rb_obj_instance_exec` を呼びます。"),
+      p("ブロックは、C では「コード（命令列）」「`self`」「外側のローカル変数の置き場所（`ep`）」の組（`rb_captured_block`）です。ブロックの中の `self` が、ブロックを書いた場所の `self` になるのは、作ったときの `self` をここに覚えているためです。"),
+      c(`
+struct rb_captured_block {
+    VALUE self;
+    const VALUE *ep;
+    union {
+        const rb_iseq_t *iseq;
+        ...
+    } code;
+};`),
+      p("`instance_eval` と `instance_exec` の本体は、`vm_eval.c` の `yield_under` です。渡されたブロックの組を複製し、`self` だけをレシーバに差し替えてから実行します。ローカル変数の置き場所はそのままなので、外側の変数も読めます。C から使うときは `rb_obj_instance_exec` を呼びます。"),
       c(`
 VALUE
 rb_obj_instance_exec(int argc, const VALUE *argv, VALUE self)
@@ -638,7 +675,7 @@ rb_obj_instance_exec(int argc, const VALUE *argv, VALUE self)
 }`),
     ],
     task: [p("ブロックを `instance_exec` で実行してからレシーバを返す `Kernel#tap_eval` を作る。`tap` と違い、ブロックの中の `self` がレシーバになる。")],
-    hints: [note("C の関数に渡されたブロックは、そのまま `rb_obj_instance_exec` に引き継がれます。")],
+    hints: [note("`yield_under` は、今実行中のフレームに渡されたブロックを使います。C の関数から `rb_obj_instance_exec` を呼べば、その関数に渡されたブロックがそのまま使われます。")],
     answer: [c(`
 static VALUE
 rb_obj_tap_eval(VALUE self)
@@ -674,12 +711,13 @@ end`),
     title: "method_missing",
     file: "vm_eval",
     body: [
-      p("Ruby のコードで見つからないメソッドを呼ぶと、VM は呼び出しを `method_missing(:名前, 引数…)` に書き換えて呼び直します。書き換えるのは `vm_insnhelper.c` の `vm_call_method_missing_body` です。"),
+      p("VM はメソッドを呼ぶとき、レシーバのクラスから `RCLASS_SUPER` の連なりをたどって、各クラスのメソッド表を探します。最後まで見つからなかったときや、外から private のメソッドを呼んだときは、`vm_call_method_nome` に進みます。理由（見つからない、private だった、など）は `method_missing_reason` として残しておきます。"),
+      p("ここで VM は、呼び出しを `method_missing(:名前, 引数…)` に書き換えて呼び直します。書き換えるのは `vm_insnhelper.c` の `vm_call_method_missing_body` です。`method_missing` もふつうのメソッドとして同じ手順で探されるので、自分で定義していればそれが呼ばれます。"),
       c(`
     /* shift arguments: m(a, b, c) #=> method_missing(:m, a, b, c) */
     ...
     argv[0] = ID2SYM(vm_ci_mid(orig_ci));`),
-      p("`method_missing` を定義していなければ、`BasicObject#method_missing` の実体である `vm_eval.c` の `rb_method_missing` が呼ばれます。そこから `raise_method_missing` が `NoMethodError` を作ります。メッセージの書式は、その先の `rb_make_no_method_exception` で決まります。"),
+      p("`method_missing` を定義していなければ、`BasicObject#method_missing` の実体である `vm_eval.c` の `rb_method_missing` が呼ばれます。そこから `raise_method_missing` が `NoMethodError` を作ります。メッセージの書式は、残しておいた理由で選びます（private なら `private method '…' called for …`）。単に見つからなかったときの書式は、その先の `rb_make_no_method_exception` で決まります。"),
       c(`
 static VALUE
 rb_method_missing(int argc, const VALUE *argv, VALUE obj)
@@ -721,12 +759,14 @@ end`),
     title: "define_method と lambda",
     file: "proc",
     body: [
-      p("`define_method` にブロックを渡して定義したメソッドは、lambda と同じく引数の数を厳密に確かめます。lambda として扱っている箇所は 3 つあります。"),
+      p("`define_method(:pair) { |a, b| ... }` で定義したメソッドは、lambda と同じく引数の数を厳密に確かめます。`pair(1)` は `ArgumentError` です。このメソッドは `VM_METHOD_TYPE_BMETHOD` という種類で、定義には渡したブロックから作った proc が入っています。"),
+      p("proc として扱うか lambda として扱うかは、定義するときと呼ぶときの両方で決まっていて、lambda にしている箇所が 3 つあります。"),
       list(
-        "`proc.c` の `rb_mod_define_method_with_visibility`: ブロックを `rb_block_lambda()` で受け取る。複製した proc には `is_lambda = TRUE` を付ける",
-        "`vm_insnhelper.c` の `vm_call_bmethod`: 中身が iseq なら `vm_call_iseq_bmethod` に進む。ここでは引数をメソッドと同じ方法（`arg_setup_method`）で受け取る",
-        "`vm.c` の `vm_invoke_bmethod`: それ以外の経路でも、`is_lambda` に `TRUE` を渡して呼ぶ",
+        "定義するとき（`proc.c` の `rb_mod_define_method_with_visibility`）: ブロックを `rb_block_lambda()` で lambda として受け取る。複製した proc にも `is_lambda = TRUE` を付ける",
+        "呼ぶとき、速い経路（`vm_insnhelper.c` の `vm_call_bmethod`）: proc の中身が Ruby のブロック（iseq）なら `vm_call_iseq_bmethod` に進む。ここではフラグを見ず、引数を `def` のメソッドと同じ方法（`arg_setup_method`）で受け取る",
+        "呼ぶとき、それ以外の経路（`vm.c` の `vm_invoke_bmethod`）: `invoke_block_from_c_proc` を呼ぶとき、引数 `is_lambda` をいつも `TRUE` にする",
       ),
+      p("つまり、proc として扱うには 3 か所とも変える必要があります。"),
       c(`
     if (vm_block_type(block) == block_type_iseq) {
         CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);
@@ -774,8 +814,10 @@ end`),
     title: "opt_plus 命令",
     file: "vm_insnhelper",
     body: [
-      p("Ruby から見ると `a + b` は `a.+(b)` というメソッド呼び出しですが、YARV は普通の呼び出しの命令（`send`）ではなく、`+` 専用の `opt_plus` 命令にコンパイルします。`RubyVM::InstructionSequence.compile(\"a + b\").disasm` で確かめられます。"),
-      p("`opt_plus` は `vm_insnhelper.c` の `vm_opt_plus` を呼びます。両方が Fixnum で、`Integer#+` が再定義されていなければ（`OP_UNREDEFINED_P`）、メソッドを探して呼ぶ手順を省き、その場で足します。結果は `Integer#+` を呼んだときと同じです。当てはまらなければ `Qundef` を返し、普通のメソッド呼び出しの手順に戻ります。"),
+      p("CRuby は Ruby のコードを、YARV という VM の命令列（iseq）にコンパイルしてから実行します。メソッド呼び出しはふつう `send` 命令になり、実行するたびにメソッドを探して、フレームを積んで呼びます。"),
+      p("Ruby から見ると `a + b` は `a.+(b)` というメソッド呼び出しです。ただし `+` のようによく使う演算子は、`send` ではなく専用の `opt_plus` 命令にコンパイルされます。`RubyVM::InstructionSequence.compile(\"a + b\").disasm` で確かめられます。"),
+      p("`opt_plus` は `vm_insnhelper.c` の `vm_opt_plus` を呼びます。両方が Fixnum で、`Integer#+` が再定義されていなければ、メソッドを探して呼ぶ手順を省き、その場で足します。当てはまらなければ `Qundef` を返し、`send` と同じ手順に戻ります。"),
+      p("再定義されたかどうかは、`OP_UNREDEFINED_P` がフラグの表で確かめます。`Integer` に `+` を定義し直したり、`+` を持つモジュールを `prepend` したりすると、VM がこの表のフラグを立てます。そのため、近道を通っても結果は `Integer#+` を呼んだときと変わりません。"),
       c(`
 static VALUE
 vm_opt_plus(VALUE recv, VALUE obj)
