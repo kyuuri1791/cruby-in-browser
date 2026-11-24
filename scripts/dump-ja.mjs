@@ -23,7 +23,7 @@ const blocks = (bs = []) => {
 out.push('# 教材', '');
 for (const l of lessons) {
   out.push(`## ${l.title}`, '');
-  blocks(l.body);
+  if (l.body) blocks(l.body);
   if (l.task) { out.push('### 課題', ''); blocks(l.task); }
   if (l.hints) { out.push('### ヒント', ''); blocks(l.hints); }
   if (l.answer) { out.push('### 答え', ''); blocks(l.answer); }

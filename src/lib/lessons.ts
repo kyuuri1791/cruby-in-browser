@@ -7,22 +7,20 @@ export type Block =
   | { type: "p"; text: string }
   | { type: "code"; lang: "c" | "ruby" | "text"; code: string }
   | { type: "list"; items: string[] }
-  | { type: "note"; text: string };
+  | { type: "note"; text: string }
+  /** 解答例の差分（diff -U3 の形。@@ の行・空白・+・- で始まる行） */
+  | { type: "diff"; file: string; diff: string };
 
 export type Lesson = {
   slug: string;
   title: string;
-  /** 最初に開くファイル（version, array など）。null なら C のファイルは開かない */
-  file: string | null;
-  body: Block[];
+  body?: Block[];
   /** 手を動かす課題の説明 */
   task?: Block[];
   hints?: Block[];
   answer?: Block[];
   /** 課題を確かめる spec（spec/<章番号>_spec.rb として置く） */
   spec?: string;
-  /** この章の main.rb の最初の内容 */
-  playground: string;
 };
 
 /** 章の spec ファイルの場所 */
@@ -33,18 +31,16 @@ export const specPath = (slug: string) => {
 };
 
 const p = (text: string): Block => ({ type: "p", text });
-const c = (code: string): Block => ({ type: "code", lang: "c", code: code.trim() });
 const rb = (code: string): Block => ({ type: "code", lang: "ruby", code: code.trim() });
-const txt = (code: string): Block => ({ type: "code", lang: "text", code: code.trim() });
 const list = (...items: string[]): Block => ({ type: "list", items });
 const note = (text: string): Block => ({ type: "note", text });
+const diff = (file: string, text: string): Block => ({ type: "diff", file, diff: text.replace(/^\n+/, "").trimEnd() });
 const spec = (code: string) => `${code.trim()}\n`;
 
 export const lessons: Lesson[] = [
   {
     slug: "intro",
     title: "はじめに",
-    file: null,
     body: [
       p("CRuby の C のソースを書き換え、ブラウザの中でビルドして実行します。"),
       list(
@@ -53,23 +49,27 @@ export const lessons: Lesson[] = [
       ),
       note("標準ライブラリと rspec が入っています。ページを再読み込みすると、書き換えた内容は元に戻ります。"),
     ],
-    playground: 'puts "Hello, MRI!"\np RUBY_VERSION',
   },
   {
     slug: "version",
     title: "ruby -v の表示",
-    file: "version",
-    body: [
-      p("`ruby -v` の表示と `RUBY_DESCRIPTION` は、`version.c` の `ruby_description` から作られます。"),
-      c(`
-const char ruby_description[] =
-    "ruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " "
-    "(" RUBY_RELEASE_DATETIME RUBY_REVISION_STR ") "
-    "[" RUBY_PLATFORM "]";`),
+    task: [
+      p("`RUBY_DESCRIPTION` の先頭の `ruby` を `myruby` に変える。"),
+      rb(`
+RUBY_DESCRIPTION #=> "myruby 4.1.0dev (...) +PRISM [wasm32-wasi]"`),
     ],
-    task: [p("`RUBY_DESCRIPTION` の先頭の `ruby` を `myruby` に変える。")],
-    answer: [c(`
-    "myruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " "`)],
+    answer: [
+      diff("ruby/version.c", `
+@@ -86,7 +86,7 @@
+ const int ruby_patchlevel = RUBY_PATCHLEVEL;
+ const char ruby_api_version_name[] = RUBY_API_VERSION_NAME;
+ const char ruby_description[] =
+-    "ruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " "
++    "myruby " RUBY_VERSION RUBY_PATCHLEVEL_STR " "
+     "(" RUBY_RELEASE_DATETIME RUBY_REVISION_STR ") "
+     "[" RUBY_PLATFORM "]";
+ static const int ruby_description_opt_point =`),
+    ],
     spec: spec(`
 RSpec.describe "RUBY_DESCRIPTION" do
   it "myruby で始まる" do
@@ -80,27 +80,42 @@ RSpec.describe "RUBY_DESCRIPTION" do
     expect(RUBY_DESCRIPTION).to include(RUBY_VERSION)
   end
 end`),
-    playground: "puts RUBY_DESCRIPTION",
   },
   {
     slug: "array-second",
     title: "Array#second",
-    file: "array",
-    body: [
-      p("メソッドは `Init_Array` の中で `rb_define_method(クラス, \"名前\", 関数, 引数の数)` を呼んで登録しています。"),
-      c(`
-    rb_define_method(rb_cArray, "push", rb_ary_push_m, -1);`),
+    task: [
+      p("2 番目の要素を返す `Array#second` を作る。"),
+      rb(`
+[1, 2, 3].second #=> 2
+[1].second       #=> nil
+[].second        #=> nil`),
     ],
-    task: [p("`[1, 2, 3].second` が `2`、`[1].second` が `nil` を返す `Array#second` を作る。")],
     hints: [note("配列の要素は `rb_ary_entry(ary, i)` で取れます。範囲外なら `nil` を返します。")],
-    answer: [c(`
-static VALUE
-ary_second(VALUE self)
-{
-    return rb_ary_entry(self, 1);
-}
-
-    rb_define_method(rb_cArray, "second", ary_second, 0);`)],
+    answer: [
+      diff("ruby/array.c", `
+@@ -9014,6 +9014,12 @@
+  *  - #sum: Returns a sum of elements according to either <tt>+</tt> or a given block.
+  */
+ 
++static VALUE
++ary_second(VALUE self)
++{
++    return rb_ary_entry(self, 1);
++}
++
+ void
+ Init_Array(void)
+ {
+@@ -9050,6 +9056,7 @@
+     rb_define_method(rb_cArray, "intersect?", rb_ary_intersect_p, 1);
+     rb_define_method(rb_cArray, "<<", rb_ary_push, 1);
+     rb_define_method(rb_cArray, "push", rb_ary_push_m, -1);
++    rb_define_method(rb_cArray, "second", ary_second, 0);
+     rb_define_alias(rb_cArray,  "append", "push");
+     rb_define_method(rb_cArray, "pop", rb_ary_pop_m, -1);
+     rb_define_method(rb_cArray, "shift", rb_ary_shift_m, -1);`),
+    ],
     spec: spec(`
 RSpec.describe Array do
   describe "#second" do
@@ -123,27 +138,44 @@ RSpec.describe Array do
     end
   end
 end`),
-    playground: "p [1, 2, 3].second\np [:only].second",
   },
   {
     slug: "string-shout",
     title: "String#shout",
-    file: "string",
-    body: [
-      p("C から Ruby のメソッドを呼ぶには `rb_funcall(recv, mid, argc, ...)` を使います。レシーバ `recv` のメソッド `mid` を、`argc` 個の引数（`...` の部分）で呼びます。`mid` はメソッド名を表す `ID` 型の値で、`rb_intern(\"upcase\")` のように C の文字列から作ります。"),
+    task: [
+      p("大文字にして `!` を付けた文字列を返す `String#shout` を作る。レシーバは変えない。"),
+      rb(`
+s = "hello"
+s.shout #=> "HELLO!"
+s       #=> "hello"`),
     ],
-    task: [p("`\"hello\".shout` が `\"HELLO!\"` を返す `String#shout` を作る。レシーバは変えない。")],
     hints: [note("文字列の末尾に C の文字列をつなげるには `rb_str_cat_cstr(str, \"?\")` のように書きます。")],
-    answer: [c(`
-static VALUE
-str_shout(VALUE self)
-{
-    VALUE result = rb_funcall(self, rb_intern("upcase"), 0);
-    rb_str_cat_cstr(result, "!");
-    return result;
-}
-
-    rb_define_method(rb_cString, "shout", str_shout, 0);`)],
+    answer: [
+      diff("ruby/string.c", `
+@@ -16353,6 +16353,14 @@
+     return ST_CONTINUE;
+ }
+ 
++static VALUE
++str_shout(VALUE self)
++{
++    VALUE result = rb_funcall(self, rb_intern("upcase"), 0);
++    rb_str_cat_cstr(result, "!");
++    return result;
++}
++
+ void
+ Init_String(void)
+ {
+@@ -16437,6 +16445,7 @@
+     sym_fold       = ID2SYM(rb_intern_const("fold"));
+ 
+     rb_define_method(rb_cString, "upcase", rb_str_upcase, -1);
++    rb_define_method(rb_cString, "shout", str_shout, 0);
+     rb_define_method(rb_cString, "downcase", rb_str_downcase, -1);
+     rb_define_method(rb_cString, "capitalize", rb_str_capitalize, -1);
+     rb_define_method(rb_cString, "swapcase", rb_str_swapcase, -1);`),
+    ],
     spec: spec(`
 RSpec.describe String do
   describe "#shout" do
@@ -157,25 +189,42 @@ RSpec.describe String do
     end
   end
 end`),
-    playground: 'p "hello".shout\np "Ruby is fun".shout',
   },
   {
     slug: "integer-triple",
     title: "Integer#triple",
-    file: "numeric",
-    body: [
-      p("`rb_int_mul(x, y)` は、Integer の `x` と `y` を掛けた値を返します（Ruby の `x * y`）。結果が Fixnum に収まらなければ Bignum を返します。"),
+    task: [
+      p("3 倍した値を返す `Integer#triple` を作る。"),
+      rb(`
+7.triple       #=> 21
+-5.triple      #=> -15
+(2**70).triple #=> 3541774862152233910272`),
     ],
-    task: [p("`7.triple` が `21` を返し、`(2**70).triple` も正しく計算する `Integer#triple` を作る。")],
     hints: [note("C の整数から Ruby の Integer（Fixnum）を作るには `INT2FIX(42)` のように書きます。")],
-    answer: [c(`
-static VALUE
-int_triple(VALUE self)
-{
-    return rb_int_mul(self, INT2FIX(3));
-}
-
-    rb_define_method(rb_cInteger, "triple", int_triple, 0);`)],
+    answer: [
+      diff("ruby/numeric.c", `
+@@ -6490,6 +6490,12 @@
+  * - #step: Invokes the given block with the sequence of specified numbers.
+  *
+  */
++static VALUE
++int_triple(VALUE self)
++{
++    return rb_int_mul(self, INT2FIX(3));
++}
++
+ void
+ Init_Numeric(void)
+ {
+@@ -6557,6 +6563,7 @@
+     rb_define_method(rb_cInteger, "+", rb_int_plus, 1);
+     rb_define_method(rb_cInteger, "-", rb_int_minus, 1);
+     rb_define_method(rb_cInteger, "*", rb_int_mul, 1);
++    rb_define_method(rb_cInteger, "triple", int_triple, 0);
+     rb_define_method(rb_cInteger, "/", rb_int_div, 1);
+     rb_define_method(rb_cInteger, "div", rb_int_idiv, 1);
+     rb_define_method(rb_cInteger, "%", rb_int_modulo, 1);`),
+    ],
     spec: spec(`
 RSpec.describe Integer do
   describe "#triple" do
@@ -198,34 +247,51 @@ RSpec.describe Integer do
     end
   end
 end`),
-    playground: "p 7.triple\np (2**70).triple",
   },
   {
     slug: "hash-sum-values",
     title: "Hash#sum_values",
-    file: "hash",
-    body: [
-      p("`rb_hash_foreach(hash, func, arg)` は要素ごとに `func(key, value, arg)` を呼びます。続けるなら `ST_CONTINUE` を返します。"),
+    task: [
+      p("全ての value の合計を返す `Hash#sum_values` を作る。"),
+      rb(`
+{ a: 1, b: 2, c: 3 }.sum_values #=> 6
+{ x: 1, y: 0.5 }.sum_values     #=> 1.5
+{}.sum_values                   #=> 0`),
     ],
-    task: [p("全ての value の合計を返す `Hash#sum_values` を作る。`{ a: 1, b: 2 }.sum_values` なら `3`、空のハッシュなら `0` を返す。value に `Float` が混ざっていてもよい。")],
-    answer: [c(`
-static int
-sum_values_i(VALUE key, VALUE value, VALUE arg)
-{
-    VALUE *sum = (VALUE *)arg;
-    *sum = rb_funcall(*sum, '+', 1, value);
-    return ST_CONTINUE;
-}
-
-static VALUE
-rb_hash_sum_values(VALUE hash)
-{
-    VALUE sum = INT2FIX(0);
-    rb_hash_foreach(hash, sum_values_i, (VALUE)&sum);
-    return sum;
-}
-
-    rb_define_method(rb_cHash, "sum_values", rb_hash_sum_values, 0);`)],
+    answer: [
+      diff("ruby/hash.c", `
+@@ -7758,6 +7758,22 @@
+  *
+  */
+ 
++static int
++sum_values_i(VALUE key, VALUE value, VALUE arg)
++{
++    VALUE *sum = (VALUE *)arg;
++    *sum = rb_funcall(*sum, '+', 1, value);
++    return ST_CONTINUE;
++}
++
++static VALUE
++rb_hash_sum_values(VALUE hash)
++{
++    VALUE sum = INT2FIX(0);
++    rb_hash_foreach(hash, sum_values_i, (VALUE)&sum);
++    return sum;
++}
++
+ void
+ Init_Hash(void)
+ {
+@@ -7811,6 +7827,7 @@
+     rb_define_method(rb_cHash, "transform_values!", rb_hash_transform_values_bang, 0);
+ 
+     rb_define_method(rb_cHash, "keys", rb_hash_keys, 0);
++    rb_define_method(rb_cHash, "sum_values", rb_hash_sum_values, 0);
+     rb_define_method(rb_cHash, "values", rb_hash_values, 0);
+     rb_define_method(rb_cHash, "values_at", rb_hash_values_at, -1);
+     rb_define_method(rb_cHash, "fetch_values", rb_hash_fetch_values, -1);`),
+    ],
     spec: spec(`
 RSpec.describe Hash do
   describe "#sum_values" do
@@ -248,23 +314,29 @@ RSpec.describe Hash do
     end
   end
 end`),
-    playground: "p({a: 1, b: 2, c: 3}.sum_values)\np({}.sum_values)",
   },
   {
     slug: "nil-to-s",
     title: "nil.to_s",
-    file: "object",
-    body: [
-      p("`nil.to_s` の実体は `object.c` の `rb_nil_to_s` です。式展開（`#{nil}`）では、`NilClass#to_s` が再定義されていなければ、`vm_insnhelper.c` の `vm_objtostring` がこの関数を直接呼びます。"),
+    task: [
+      p("`nil.to_s` が `\"(nil)\"` を返すようにする。"),
+      rb(`
+nil.to_s   #=> "(nil)"
+"x=#{nil}" #=> "x=(nil)"`),
     ],
-    task: [p("`nil.to_s` が `\"(nil)\"` を返すようにする。")],
     hints: [note("C の文字列から Ruby の String を作るには `rb_str_new_cstr(\"hoge\")` のように書きます。")],
-    answer: [c(`
-VALUE
-rb_nil_to_s(VALUE obj)
-{
-    return rb_str_new_cstr("(nil)");
-}`)],
+    answer: [
+      diff("ruby/object.c", `
+@@ -1428,7 +1428,7 @@
+ VALUE
+ rb_nil_to_s(VALUE obj)
+ {
+-    return rb_cNilClass_to_s;
++    return rb_str_new_cstr("(nil)");
+ }
+ 
+ /*`),
+    ],
     spec: spec(`
 RSpec.describe NilClass do
   describe "#to_s" do
@@ -277,32 +349,45 @@ RSpec.describe NilClass do
     end
   end
 end`),
-    playground: 'p nil.to_s\nputs "x=#{nil}"',
   },
   {
     slug: "immediate",
     title: "Object#immediate?",
-    file: "object",
-    body: [
-      p("Ruby のオブジェクトは、C では全て `VALUE` 型（ポインタと同じ大きさの整数）で扱います。多くの `VALUE` は、メモリ上のオブジェクトを指すポインタです。ただし、小さな整数、シンボル、`nil`・`true`・`false` はオブジェクトを作らず、値を `VALUE` そのものに埋め込みます（即値）。たとえば Fixnum の `n` は `(n << 1) | 1` で、`nil` は `Qnil` という決まった値です。"),
-      c(`
-static inline bool
-RB_SPECIAL_CONST_P(VALUE obj)
-{
-    return (obj == RUBY_Qfalse) || RB_IMMEDIATE_P(obj);
-}`),
-      p("このサイトの Ruby は wasm32 向けなので、`VALUE` は 32 ビットです。64 ビットの環境と違い、Fixnum の範囲は `-2**30` から `2**30 - 1` までで、`Float` は即値（flonum）になりません。"),
+    task: [
+      p("即値なら `true`、そうでなければ `false` を返す `Object#immediate?` を作る。"),
+      rb(`
+1.immediate?       #=> true
+:sym.immediate?    #=> true
+nil.immediate?     #=> true
+(2**30).immediate? #=> false
+1.5.immediate?     #=> false
+"str".immediate?   #=> false`),
     ],
-    task: [p("即値なら `true`、そうでなければ `false` を返す `Object#immediate?` を作る。")],
     hints: [note("即値かどうかは `RB_SPECIAL_CONST_P(obj)` で、C の真偽値を Ruby の値にするのは `RBOOL(…)` です。登録は `InitVM_Object` に書いてください。")],
-    answer: [c(`
-static VALUE
-rb_obj_immediate_p(VALUE obj)
-{
-    return RBOOL(RB_SPECIAL_CONST_P(obj));
-}
-
-    rb_define_method(rb_mKernel, "immediate?", rb_obj_immediate_p, 0);`)],
+    answer: [
+      diff("ruby/object.c", `
+@@ -4403,6 +4403,12 @@
+  *
+  */
+ 
++static VALUE
++rb_obj_immediate_p(VALUE obj)
++{
++    return RBOOL(RB_SPECIAL_CONST_P(obj));
++}
++
+ void
+ InitVM_Object(void)
+ {
+@@ -4606,6 +4612,7 @@
+     rb_define_method(rb_mKernel, "public_methods", rb_obj_public_methods, -1); /* in class.c */
+     rb_define_method(rb_mKernel, "instance_variables", rb_obj_instance_variables, 0); /* in variable.c */
+     rb_define_method(rb_mKernel, "instance_variable_get", rb_obj_ivar_get, 1);
++    rb_define_method(rb_mKernel, "immediate?", rb_obj_immediate_p, 0);
+     rb_define_method(rb_mKernel, "instance_variable_set", rb_obj_ivar_set_m, 2);
+     rb_define_method(rb_mKernel, "instance_variable_defined?", rb_obj_ivar_defined, 1);
+     rb_define_method(rb_mKernel, "remove_instance_variable",`),
+    ],
     spec: spec(`
 RSpec.describe Object do
   describe "#immediate?" do
@@ -331,37 +416,44 @@ RSpec.describe Object do
     end
   end
 end`),
-    playground: "p 1.immediate?\np (2**30 - 1).immediate?\np (2**30).immediate?\np 1.5.immediate?\np nil.immediate?",
   },
   {
     slug: "proc-kind",
     title: "Proc#kind",
-    file: "proc",
-    body: [
-      p("Ruby から見ると、proc と lambda はどちらも `Proc` クラスのオブジェクトで、違うのは引数の扱いと `return` の意味です。C では、どちらも同じ `rb_proc_t` 構造体で表し、lambda かどうかはフラグ 1 つ（`header.is_lambda`）で区別しています。`lambda {}` や `->` で作るとこのフラグが立ち、`proc {}` や `Proc.new` では立ちません。引数をどう受け取るかは、呼ぶときにこのフラグを見て決めます。"),
-      p("C の関数には `Proc` オブジェクトが `VALUE` として渡ってくるので、`GetProcPtr(procval, proc)` で中の `rb_proc_t` を取り出します。`Proc#lambda?` は、取り出したフラグをそのまま返しているだけです。"),
-      c(`
-VALUE
-rb_proc_lambda_p(VALUE procval)
-{
-    rb_proc_t *proc;
-    GetProcPtr(procval, proc);
-
-    return RBOOL(proc->header.is_lambda);
-}`),
+    task: [
+      p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。"),
+      rb(`
+-> {}.kind                 #=> :lambda
+proc {}.kind               #=> :proc
+method(:puts).to_proc.kind #=> :lambda`),
     ],
-    task: [p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。")],
     hints: [note("シンボルは `ID2SYM(rb_intern(\"lambda\"))` で作れます。登録は `Init_Proc` の `\"lambda?\"` の行の近くに書いてください。")],
-    answer: [c(`
-static VALUE
-proc_kind(VALUE self)
-{
-    rb_proc_t *proc;
-    GetProcPtr(self, proc);
-    return ID2SYM(rb_intern(proc->header.is_lambda ? "lambda" : "proc"));
-}
-
-    rb_define_method(rb_cProc, "kind", proc_kind, 0);`)],
+    answer: [
+      diff("ruby/proc.c", `
+@@ -5447,6 +5447,14 @@
+  *
+  */
+ 
++static VALUE
++proc_kind(VALUE self)
++{
++    rb_proc_t *proc;
++    GetProcPtr(self, proc);
++    return ID2SYM(rb_intern(proc->header.is_lambda ? "lambda" : "proc"));
++}
++
+ void
+ Init_Proc(void)
+ {
+@@ -5493,6 +5501,7 @@
+     rb_define_method(rb_cProc, "to_s", proc_to_s, 0);
+     rb_define_alias(rb_cProc, "inspect", "to_s");
+     rb_define_method(rb_cProc, "lambda?", rb_proc_lambda_p, 0);
++    rb_define_method(rb_cProc, "kind", proc_kind, 0);
+     rb_define_method(rb_cProc, "binding", proc_binding, 0);
+     rb_define_method(rb_cProc, "curry", proc_curry, -1);
+     rb_define_method(rb_cProc, "<<", proc_compose_to_left, 1);`),
+    ],
     spec: spec(`
 RSpec.describe Proc do
   describe "#kind" do
@@ -384,41 +476,48 @@ RSpec.describe Proc do
     end
   end
 end`),
-    playground: "p(-> {}.kind)\np(proc {}.kind)\np method(:puts).to_proc.kind",
   },
   {
     slug: "define-method",
     title: "Module#define_private_method",
-    file: "proc",
-    body: [
-      p("引数なしの `private` を書くと、その後に `def` で定義するメソッドが private になります。この「今の可視性」は、`class Foo ... end` の本体ごとに VM が持つ cref（`rb_cref_t`）に入っています。cref は、その場所で定数やメソッドを定義する先のクラスと、可視性（`scope_visi`）を持つ構造体です。`private` はこの `scope_visi` を書き換え、`def` はそれを読んで可視性を決めます。"),
-      p("`define_method` も同じ cref を見ます。本体は `proc.c` の `rb_mod_define_method` です。`rb_vm_cref_in_context` は、`define_method` がそのクラスの本体から直接呼ばれたときだけ cref を返します。返ってくれば `CREF_SCOPE_VISI(cref)` の可視性を使い、そうでなければ（`Foo.define_method(...)` のように外から呼んだときなど）public にします。実際にメソッドを定義するのは、可視性を受け取る `rb_mod_define_method_with_visibility` です。"),
-      c(`
-VALUE
-rb_mod_define_method(int argc, VALUE *argv, VALUE mod)
-{
-    const rb_cref_t *cref = rb_vm_cref_in_context(mod, mod);
-    const rb_scope_visibility_t default_scope_visi = {METHOD_VISI_PUBLIC, FALSE};
-    const rb_scope_visibility_t *scope_visi = &default_scope_visi;
+    task: [
+      p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
+      rb(`
+class Vault
+  define_private_method(:secret) { 42 } #=> :secret
 
-    if (cref) {
-        scope_visi = CREF_SCOPE_VISI(cref);
-    }
+  def peek = secret
+end
 
-    return rb_mod_define_method_with_visibility(argc, argv, mod, scope_visi);
-}`),
+Vault.new.peek   #=> 42
+Vault.new.secret #=> NoMethodError`),
     ],
-    task: [p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は `define_method` と同じく、定義したメソッド名のシンボル。")],
     hints: [note("`define_method` は `Init_Proc` で登録されています。")],
-    answer: [c(`
-static VALUE
-rb_mod_define_private_method(int argc, VALUE *argv, VALUE mod)
-{
-    const rb_scope_visibility_t scope_visi = {METHOD_VISI_PRIVATE, FALSE};
-    return rb_mod_define_method_with_visibility(argc, argv, mod, &scope_visi);
-}
-
-    rb_define_method(rb_cModule, "define_private_method", rb_mod_define_private_method, -1);`)],
+    answer: [
+      diff("ruby/proc.c", `
+@@ -5447,6 +5447,13 @@
+  *
+  */
+ 
++static VALUE
++rb_mod_define_private_method(int argc, VALUE *argv, VALUE mod)
++{
++    const rb_scope_visibility_t scope_visi = {METHOD_VISI_PRIVATE, FALSE};
++    return rb_mod_define_method_with_visibility(argc, argv, mod, &scope_visi);
++}
++
+ void
+ Init_Proc(void)
+ {
+@@ -5576,6 +5583,7 @@
+     rb_define_method(rb_cModule, "instance_method", rb_mod_instance_method, 1);
+     rb_define_method(rb_cModule, "public_instance_method", rb_mod_public_instance_method, 1);
+     rb_define_method(rb_cModule, "define_method", rb_mod_define_method, -1);
++    rb_define_method(rb_cModule, "define_private_method", rb_mod_define_private_method, -1);
+ 
+     /* Kernel */
+     rb_define_method(rb_mKernel, "define_singleton_method", rb_obj_define_method, -1);`),
+    ],
     spec: spec(`
 RSpec.describe Module do
   describe "#define_private_method" do
@@ -445,60 +544,66 @@ RSpec.describe Module do
     end
   end
 end`),
-    playground: "class Vault\n  define_private_method(:secret) { 42 }\n\n  def peek = secret\nend\n\np Vault.new.peek\np Vault.private_method_defined?(:secret)",
   },
   {
     slug: "module-mixins",
     title: "Module#mixins",
-    file: "class",
-    body: [
-      p("CRuby のクラスは、スーパークラスへのポインタ（`RCLASS_SUPER`）でつながっています。メソッド探索は、この連なりを先頭からたどります。"),
-      p("`include A` をすると、A のメソッド表を共有する内部クラス（`T_ICLASS`、以下 iclass）が作られ、クラスとスーパークラスの間に挟み込まれます。iclass の `METACLASS_OF(p)`（`RBASIC(p)->klass`）は、元のモジュール A を指しています。"),
-      txt(`
-class C; include A; end
+    task: [
+      p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。"),
+      rb(`
+module A; end
+module B; end
 
-C → iclass(A) → Object → iclass(Kernel) → BasicObject`),
-      p("`prepend B` では B を C より前に置きたいのですが、連なりの先頭は C 自身のままにしておく必要があります（定数 `C` や `C.new` が指すのはこのオブジェクトです）。そこで最初の `prepend` のときに、`ensure_origin` が origin という iclass を作り、C のメソッド表をそちらへ移します。C は空になり、その後ろに B、origin の順に並びます。以後 C に定義したメソッドも origin に入ります。"),
-      txt(`
-class C; include A; prepend B; end
+class C
+  include A
+  prepend B
+end
 
-C（空）→ iclass(B) → origin（C のメソッド）→ iclass(A) → Object → …`),
-      p("`Module#ancestors` はこの連なりをたどって並べます。"),
-      c(`
-    for (p = mod; p; p = RCLASS_SUPER(p)) {
-        if (p == refined_class) break;
-        if (p != RCLASS_ORIGIN(p)) continue;
-        if (BUILTIN_TYPE(p) == T_ICLASS) {
-            rb_ary_push(ary, METACLASS_OF(p));
-        }
-        else {
-            rb_ary_push(ary, p);
-        }
-    }`),
-      p("`RCLASS_ORIGIN(p)` は、origin があればそれを、なければ `p` 自身を返します。`p != RCLASS_ORIGIN(p)` が真になるのは、origin を持つ C 本体だけで、ここは飛ばします。代わりに origin の位置で、`METACLASS_OF(origin)` つまり C を入れます。こうして `C.ancestors` は `[B, C, A, …]` になります。"),
+C.ancestors #=> [B, C, A, Object, Kernel, BasicObject]
+C.mixins    #=> [B, A, Kernel]`),
     ],
-    task: [p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。")],
     hints: [note("`ancestors` は `object.c` の `InitVM_Object` で登録されています。関数は `class.c` に書き、`object.c` で同じように登録してください。`object.c` には、`InitVM_Object` より前に関数の宣言が要ります。")],
     answer: [
-      c(`
-VALUE
-rb_mod_mixins(VALUE mod)
-{
-    VALUE p, ary = rb_ary_new();
-
-    for (p = mod; p; p = RCLASS_SUPER(p)) {
-        if (p != RCLASS_ORIGIN(p)) continue;
-        if (BUILTIN_TYPE(p) == T_ICLASS && RB_TYPE_P(METACLASS_OF(p), T_MODULE)) {
-            rb_ary_push(ary, METACLASS_OF(p));
-        }
-    }
-    return ary;
-}`),
-      p("`object.c` には次の 2 行を足す。"),
-      c(`
-VALUE rb_mod_mixins(VALUE mod);
-
-    rb_define_method(rb_cModule, "mixins", rb_mod_mixins, 0);`),
+      diff("ruby/class.c", `
+@@ -2154,6 +2154,20 @@
+  */
+ 
+ VALUE
++rb_mod_mixins(VALUE mod)
++{
++    VALUE p, ary = rb_ary_new();
++
++    for (p = mod; p; p = RCLASS_SUPER(p)) {
++        if (p != RCLASS_ORIGIN(p)) continue;
++        if (BUILTIN_TYPE(p) == T_ICLASS && RB_TYPE_P(METACLASS_OF(p), T_MODULE)) {
++            rb_ary_push(ary, METACLASS_OF(p));
++        }
++    }
++    return ary;
++}
++
++VALUE
+ rb_mod_ancestors(VALUE mod)
+ {
+     VALUE p, ary = rb_ary_new();`),
+      diff("ruby/object.c", `
+@@ -4403,6 +4403,8 @@
+  *
+  */
+ 
++VALUE rb_mod_mixins(VALUE mod);
++
+ void
+ InitVM_Object(void)
+ {
+@@ -4655,6 +4657,7 @@
+     rb_define_method(rb_cModule, "name", rb_mod_name, 0);  /* in variable.c */
+     rb_define_method(rb_cModule, "set_temporary_name", rb_mod_set_temporary_name, 1);  /* in variable.c */
+     rb_define_method(rb_cModule, "ancestors", rb_mod_ancestors, 0); /* in class.c */
++    rb_define_method(rb_cModule, "mixins", rb_mod_mixins, 0);
+     rb_define_method(rb_cModule, "descendants", rb_mod_descendants, 0); /* in class.c */
+ 
+     rb_define_method(rb_cModule, "attr", rb_mod_attr, -1);`),
     ],
     spec: spec(`
 RSpec.describe Module do
@@ -519,48 +624,60 @@ RSpec.describe Module do
     end
   end
 end`),
-    playground: "module A; end\nmodule B; end\n\nclass C\n  include A\n  prepend B\nend\n\np C.ancestors\np C.mixins",
   },
   {
     slug: "attr-predicate",
     title: "Module#attr_predicate",
-    file: "object",
-    body: [
-      p("CRuby のメソッドは、クラスのメソッド表に、名前をキーにしたエントリ（`rb_method_entry_t`）として入っています。エントリが指す定義（`rb_method_definition_t`）には種類があり、呼ぶときは種類ごとに処理が分かれます。"),
-      list(
-        "`VM_METHOD_TYPE_ISEQ`: `def` で書いたメソッド。コンパイルした命令列を実行する",
-        "`VM_METHOD_TYPE_CFUNC`: `rb_define_method` で登録した C の関数",
-        "`VM_METHOD_TYPE_IVAR`: `attr_reader` のメソッド。インスタンス変数の名前だけを持ち、呼ぶとその値を返す",
-        "`VM_METHOD_TYPE_BMETHOD`: `define_method` にブロックを渡して定義したメソッド",
-      ),
-      p("`attr_reader :name` は Ruby のコードも C の関数も作りません。`vm_method.c` の `rb_attr` が、`@name` という ID を持つ `VM_METHOD_TYPE_IVAR` のメソッドを `rb_add_method` で登録するだけです。"),
-      c(`
-    attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
-    if (read) {
-        rb_add_method(klass, id, VM_METHOD_TYPE_IVAR, (void *)attriv, visi);
-    }`),
+    task: [
+      p("インスタンス変数の値を返す `名前?` のメソッドを定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。"),
+      rb(`
+class User
+  attr_predicate :admin, :guest #=> [:admin?, :guest?]
+
+  def initialize(admin)
+    @admin = admin
+  end
+end
+
+User.new(true).admin? #=> true
+User.new(true).guest? #=> nil`),
     ],
-    task: [p("`attr_predicate :admin` で、`@admin` を返す `admin?` を定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。")],
     hints: [note("`rb_add_method` は `method.h` で宣言されているので、`object.c` に `#include \"method.h\"` を足します。引数から ID を作るのは、`attr_reader` と同じく `id_for_attr` で書けます。登録は `InitVM_Object` で行うので、関数はそれより前に書いてください。")],
-    answer: [c(`
-#include "method.h"
-
-static VALUE
-rb_mod_attr_predicate(int argc, VALUE *argv, VALUE klass)
-{
-    VALUE names = rb_ary_new2(argc);
-
-    for (int i = 0; i < argc; i++) {
-        ID id = id_for_attr(klass, argv[i]);
-        ID attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
-        ID pred = rb_intern_str(rb_sprintf("%"PRIsVALUE"?", rb_id2str(id)));
-        rb_add_method(klass, pred, VM_METHOD_TYPE_IVAR, (void *)attriv, METHOD_VISI_PUBLIC);
-        rb_ary_push(names, ID2SYM(pred));
-    }
-    return names;
-}
-
-    rb_define_method(rb_cModule, "attr_predicate", rb_mod_attr_predicate, -1);`)],
+    answer: [
+      diff("ruby/object.c", `
+@@ -4403,6 +4403,23 @@
+  *
+  */
+ 
++#include "method.h"
++
++static VALUE
++rb_mod_attr_predicate(int argc, VALUE *argv, VALUE klass)
++{
++    VALUE names = rb_ary_new2(argc);
++
++    for (int i = 0; i < argc; i++) {
++        ID id = id_for_attr(klass, argv[i]);
++        ID attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
++        ID pred = rb_intern_str(rb_sprintf("%"PRIsVALUE"?", rb_id2str(id)));
++        rb_add_method(klass, pred, VM_METHOD_TYPE_IVAR, (void *)attriv, METHOD_VISI_PUBLIC);
++        rb_ary_push(names, ID2SYM(pred));
++    }
++    return names;
++}
++
+ void
+ InitVM_Object(void)
+ {
+@@ -4661,6 +4678,7 @@
+     rb_define_method(rb_cModule, "attr_reader", rb_mod_attr_reader, -1);
+     rb_define_method(rb_cModule, "attr_writer", rb_mod_attr_writer, -1);
+     rb_define_method(rb_cModule, "attr_accessor", rb_mod_attr_accessor, -1);
++    rb_define_method(rb_cModule, "attr_predicate", rb_mod_attr_predicate, -1);
+ 
+     rb_define_alloc_func(rb_cModule, rb_module_s_alloc);
+     rb_undef_method(rb_singleton_class(rb_cModule), "allocate");`),
+    ],
     spec: spec(`
 RSpec.describe Module do
   describe "#attr_predicate" do
@@ -593,40 +710,44 @@ RSpec.describe Module do
     end
   end
 end`),
-    playground: "class User\n  attr_predicate :admin\n\n  def initialize(admin)\n    @admin = admin\n  end\nend\n\np User.new(true).admin?",
   },
   {
     slug: "kernel-try",
     title: "Kernel#try",
-    file: "vm_eval",
-    body: [
-      p("`vm_eval.c` には、C から Ruby のメソッドを呼ぶための関数が集まっています（単独ではコンパイルされず、`vm.c` に `#include` されています）。String#shout で使った `rb_funcall` もその 1 つです。`rb_funcall` は、メソッドが見つからなければ Ruby で呼んだときと同じく `NoMethodError` になります。"),
-      p("`rb_check_funcall` は、メソッドがなくても例外にしない版です。次の順に確かめ、呼べなければ `Qundef`（「値がない」ことを表す、Ruby からは見えない特別な `VALUE`）を返します。"),
-      list(
-        "`respond_to?` が再定義されていて、偽を返したら呼ばない",
-        "メソッドが見つかれば呼んで、結果を返す",
-        "見つからなければ、`respond_to_missing?` が真で、`method_missing` が定義されているときだけ、`method_missing` を呼ぶ",
-      ),
-      p("CRuby の中では、暗黙の型変換（`to_ary` や `to_str` があれば使う、など）の確かめに使われています。"),
-      c(`
-VALUE
-rb_check_funcall(VALUE recv, ID mid, int argc, const VALUE *argv)
-{
-    return rb_check_funcall_default_kw(recv, mid, argc, argv, Qundef, RB_NO_KEYWORDS);
-}`),
+    task: [
+      p("メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。"),
+      rb(`
+"ruby".try(:upcase)      #=> "RUBY"
+1.try(:+, 2)             #=> 3
+nil.try(:no_such_method) #=> nil`),
     ],
-    task: [p("`obj.try(:name, *args)` で、メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。")],
     hints: [note("`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
-    answer: [c(`
-static VALUE
-rb_obj_try(int argc, VALUE *argv, VALUE self)
-{
-    rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
-    VALUE result = rb_check_funcall(self, rb_to_id(argv[0]), argc - 1, argv + 1);
-    return UNDEF_P(result) ? Qnil : result;
-}
-
-    rb_define_method(rb_mKernel, "try", rb_obj_try, -1);`)],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -2967,6 +2967,14 @@
+     return (struct vm_ifunc *)ifunc;
+ }
+ 
++static VALUE
++rb_obj_try(int argc, VALUE *argv, VALUE self)
++{
++    rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
++    VALUE result = rb_check_funcall(self, rb_to_id(argv[0]), argc - 1, argv + 1);
++    return UNDEF_P(result) ? Qnil : result;
++}
++
+ void
+ Init_vm_eval(void)
+ {
+@@ -2992,6 +3000,7 @@
+     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
+ #endif
+     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
++    rb_define_method(rb_mKernel, "try", rb_obj_try, -1);
+ 
+     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
+     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
+    ],
     spec: spec(`
 RSpec.describe Kernel do
   describe "#try" do
@@ -649,42 +770,42 @@ RSpec.describe Kernel do
     end
   end
 end`),
-    playground: 'p "ruby".try(:upcase)\np nil.try(:upcase)',
   },
   {
     slug: "tap-eval",
     title: "Kernel#tap_eval",
-    file: "vm_eval",
-    body: [
-      p("ブロックは、C では「コード（命令列）」「`self`」「外側のローカル変数の置き場所（`ep`）」の組（`rb_captured_block`）です。ブロックの中の `self` が、ブロックを書いた場所の `self` になるのは、作ったときの `self` をここに覚えているためです。"),
-      c(`
-struct rb_captured_block {
-    VALUE self;
-    const VALUE *ep;
-    union {
-        const rb_iseq_t *iseq;
-        ...
-    } code;
-};`),
-      p("`instance_eval` と `instance_exec` の本体は、`vm_eval.c` の `yield_under` です。渡されたブロックの組を複製し、`self` だけをレシーバに差し替えてから実行します。ローカル変数の置き場所はそのままなので、外側の変数も読めます。C から使うときは `rb_obj_instance_exec` を呼びます。"),
-      c(`
-VALUE
-rb_obj_instance_exec(int argc, const VALUE *argv, VALUE self)
-{
-    return yield_under(self, TRUE, argc, argv, RB_NO_KEYWORDS);
-}`),
+    task: [
+      p("ブロックの中の `self` をレシーバにして実行し、レシーバを返す `Kernel#tap_eval` を作る。"),
+      rb(`
+[1, 2].tap_eval { push(3) } #=> [1, 2, 3]
+[1, 2].tap { push(3) }      #=> NoMethodError`),
     ],
-    task: [p("ブロックを `instance_exec` で実行してからレシーバを返す `Kernel#tap_eval` を作る。`tap` と違い、ブロックの中の `self` がレシーバになる。")],
     hints: [note("`yield_under` は、今実行中のフレームに渡されたブロックを使います。C の関数から `rb_obj_instance_exec` を呼べば、その関数に渡されたブロックがそのまま使われます。")],
-    answer: [c(`
-static VALUE
-rb_obj_tap_eval(VALUE self)
-{
-    rb_obj_instance_exec(1, &self, self);
-    return self;
-}
-
-    rb_define_method(rb_mKernel, "tap_eval", rb_obj_tap_eval, 0);`)],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -2967,6 +2967,13 @@
+     return (struct vm_ifunc *)ifunc;
+ }
+ 
++static VALUE
++rb_obj_tap_eval(VALUE self)
++{
++    rb_obj_instance_exec(1, &self, self);
++    return self;
++}
++
+ void
+ Init_vm_eval(void)
+ {
+@@ -2992,6 +2999,7 @@
+     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
+ #endif
+     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
++    rb_define_method(rb_mKernel, "tap_eval", rb_obj_tap_eval, 0);
+ 
+     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
+     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
+    ],
     spec: spec(`
 RSpec.describe Kernel do
   describe "#tap_eval" do
@@ -704,34 +825,28 @@ RSpec.describe Kernel do
     end
   end
 end`),
-    playground: "p [1, 2].tap_eval { push(3) }",
   },
   {
     slug: "method-missing",
     title: "method_missing",
-    file: "vm_eval",
-    body: [
-      p("VM はメソッドを呼ぶとき、レシーバのクラスから `RCLASS_SUPER` の連なりをたどって、各クラスのメソッド表を探します。最後まで見つからなかったときや、外から private のメソッドを呼んだときは、`vm_call_method_nome` に進みます。理由（見つからない、private だった、など）は `method_missing_reason` として残しておきます。"),
-      p("ここで VM は、呼び出しを `method_missing(:名前, 引数…)` に書き換えて呼び直します。書き換えるのは `vm_insnhelper.c` の `vm_call_method_missing_body` です。`method_missing` もふつうのメソッドとして同じ手順で探されるので、自分で定義していればそれが呼ばれます。"),
-      c(`
-    /* shift arguments: m(a, b, c) #=> method_missing(:m, a, b, c) */
-    ...
-    argv[0] = ID2SYM(vm_ci_mid(orig_ci));`),
-      p("`method_missing` を定義していなければ、`BasicObject#method_missing` の実体である `vm_eval.c` の `rb_method_missing` が呼ばれます。そこから `raise_method_missing` が `NoMethodError` を作ります。メッセージの書式は、残しておいた理由で選びます（private なら `private method '…' called for …`）。単に見つからなかったときの書式は、その先の `rb_make_no_method_exception` で決まります。"),
-      c(`
-static VALUE
-rb_method_missing(int argc, const VALUE *argv, VALUE obj)
-{
-    rb_execution_context_t *ec = GET_EC();
-    raise_method_missing(ec, argc, argv, obj, ec->method_missing_reason);
-    UNREACHABLE_RETURN(Qnil);
-}`),
+    task: [
+      p("見つからないメソッドを呼んだときのメッセージの `undefined method` を `no such method` に変える。"),
+      rb(`
+Object.new.foo
+#=> no such method 'foo' for an instance of Object (NoMethodError)`),
     ],
-    task: [p("見つからないメソッドを呼んだときのメッセージを、`undefined method 'foo' for …` から `no such method 'foo' for …` に変える。")],
-    answer: [c(`
-    if (!format) {
-        format = rb_fstring_lit("no such method '%1$s' for %3$s%4$s");
-    }`)],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -978,7 +978,7 @@
+     VALUE name = argv[0];
+ 
+     if (!format) {
+-        format = rb_fstring_lit("undefined method '%1$s' for %3$s%4$s");
++        format = rb_fstring_lit("no such method '%1$s' for %3$s%4$s");
+     }
+     if (exc == rb_eNoMethodError) {
+         VALUE args = rb_ary_new4(argc - 1, argv + 1);`),
+    ],
     spec: spec(`
 RSpec.describe NoMethodError do
   describe "#message" do
@@ -752,42 +867,61 @@ RSpec.describe NoMethodError do
     end
   end
 end`),
-    playground: "begin\n  Object.new.foo\nrescue NoMethodError => e\n  puts e.message\nend",
   },
   {
     slug: "bmethod-proc",
     title: "define_method と lambda",
-    file: "proc",
-    body: [
-      p("`define_method(:pair) { |a, b| ... }` で定義したメソッドは、lambda と同じく引数の数を厳密に確かめます。`pair(1)` は `ArgumentError` です。このメソッドは `VM_METHOD_TYPE_BMETHOD` という種類で、定義には渡したブロックから作った proc が入っています。"),
-      p("proc として扱うか lambda として扱うかは、定義するときと呼ぶときの両方で決まっていて、lambda にしている箇所が 3 つあります。"),
-      list(
-        "定義するとき（`proc.c` の `rb_mod_define_method_with_visibility`）: ブロックを `rb_block_lambda()` で lambda として受け取る。複製した proc にも `is_lambda = TRUE` を付ける",
-        "呼ぶとき、速い経路（`vm_insnhelper.c` の `vm_call_bmethod`）: proc の中身が Ruby のブロック（iseq）なら `vm_call_iseq_bmethod` に進む。ここではフラグを見ず、引数を `def` のメソッドと同じ方法（`arg_setup_method`）で受け取る",
-        "呼ぶとき、それ以外の経路（`vm.c` の `vm_invoke_bmethod`）: `invoke_block_from_c_proc` を呼ぶとき、引数 `is_lambda` をいつも `TRUE` にする",
-      ),
-      p("つまり、proc として扱うには 3 か所とも変える必要があります。"),
-      c(`
-    if (vm_block_type(block) == block_type_iseq) {
-        CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);
-        return vm_call_iseq_bmethod(ec, cfp, calling);
-    }`),
+    task: [
+      p("ブロックで定義したメソッドを proc として扱い、足りない引数を `nil` で埋めるようにする。lambda を渡したときは、今まで通り引数の数を確かめる。"),
+      rb(`
+class Foo
+  define_method(:pair) { |a, b| [a, b] }
+  define_method(:strict, ->(a, b) { [a, b] })
+end
+
+Foo.new.pair(1)   #=> [1, nil]
+Foo.new.strict(1) #=> ArgumentError`),
     ],
-    task: [p("ブロックで定義したメソッドを proc として扱い、足りない引数を `nil` で埋めるようにする。lambda を渡したときは、今まで通り引数の数を確かめる。")],
     hints: [note("`vm_call_iseq_bmethod` は lambda のときだけ使うようにします。proc のときは `vm_call_noniseq_bmethod` から `vm_invoke_bmethod` に進むので、そこで proc の `is_lambda` を渡します。")],
     answer: [
-      p("`proc.c` の 2 か所を変える。"),
-      c(`
-        body = rb_block_proc();
-
-            /* proc->header.is_lambda = TRUE; の行を消す */
-            proc->header.is_from_method = TRUE;`),
-      p("`vm_insnhelper.c` の `vm_call_bmethod` で、速い経路を lambda のときだけにする。"),
-      c(`
-    if (vm_block_type(block) == block_type_iseq && proc->header.is_lambda) {`),
-      p("`vm.c` の `vm_invoke_bmethod` で、`TRUE` の代わりに proc の値を渡す。"),
-      c(`
-    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, proc->header.is_lambda, NULL, me);`),
+      diff("ruby/proc.c", `
+@@ -3156,7 +3156,7 @@
+     name = argv[0];
+     id = rb_check_id(&name);
+     if (argc == 1) {
+-        body = rb_block_lambda();
++        body = rb_block_proc();
+     }
+     else {
+         body = argv[1];
+@@ -3208,7 +3208,6 @@
+         if (vm_proc_iseq(procval) != NULL) {
+             rb_proc_t *proc;
+             GetProcPtr(procval, proc);
+-            proc->header.is_lambda = TRUE;
+             proc->header.is_from_method = TRUE;
+         }
+         rb_add_method(mod, id, VM_METHOD_TYPE_BMETHOD, (void *)procval, scope_visi->method_visi);`),
+      diff("ruby/vm_insnhelper.c", `
+@@ -4278,7 +4278,7 @@
+     while (vm_block_type(block) == block_type_proc) {
+         block = vm_proc_block(block->as.proc);
+     }
+-    if (vm_block_type(block) == block_type_iseq) {
++    if (vm_block_type(block) == block_type_iseq && proc->header.is_lambda) {
+         CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);
+         return vm_call_iseq_bmethod(ec, cfp, calling);
+     }`),
+      diff("ruby/vm.c", `
+@@ -2059,7 +2059,7 @@
+                      int argc, const VALUE *argv, int kw_splat, VALUE block_handler, const rb_callable_method_entry_t *me)
+ {
+     /* bmethod procs never carry a refinement cref (Proc#refined rejects them) */
+-    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, TRUE, NULL, me);
++    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, proc->header.is_lambda, NULL, me);
+ }
+ 
+ VALUE`),
     ],
     spec: spec(`
 RSpec.describe Module do
@@ -807,51 +941,54 @@ RSpec.describe Module do
     end
   end
 end`),
-    playground: "class Foo\n  define_method(:pair) { |a, b| [a, b] }\nend\n\np Foo.new.pair(1)",
   },
   {
     slug: "opt-plus",
     title: "opt_plus 命令",
-    file: "vm_insnhelper",
-    body: [
-      p("CRuby は Ruby のコードを、YARV という VM の命令列（iseq）にコンパイルしてから実行します。メソッド呼び出しはふつう `send` 命令になり、実行するたびにメソッドを探して、フレームを積んで呼びます。"),
-      p("Ruby から見ると `a + b` は `a.+(b)` というメソッド呼び出しです。ただし `+` のようによく使う演算子は、`send` ではなく専用の `opt_plus` 命令にコンパイルされます。`RubyVM::InstructionSequence.compile(\"a + b\").disasm` で確かめられます。"),
-      p("`opt_plus` は `vm_insnhelper.c` の `vm_opt_plus` を呼びます。両方が Fixnum で、`Integer#+` が再定義されていなければ、メソッドを探して呼ぶ手順を省き、その場で足します。当てはまらなければ `Qundef` を返し、`send` と同じ手順に戻ります。"),
-      p("再定義されたかどうかは、`OP_UNREDEFINED_P` がフラグの表で確かめます。`Integer` に `+` を定義し直したり、`+` を持つモジュールを `prepend` したりすると、VM がこの表のフラグを立てます。そのため、近道を通っても結果は `Integer#+` を呼んだときと変わりません。"),
-      c(`
-static VALUE
-vm_opt_plus(VALUE recv, VALUE obj)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-        OP_UNREDEFINED_P(PLUS, INTEGER)) {
-        return rb_fix_plus_fix(recv, obj);
-    }`),
+    task: [
+      p("`+` を `opt_plus` 命令の近道（整数どうしをメソッドを呼ばずに足す）で計算した回数を返す `RubyVM.opt_plus_count` を作る。"),
+      rb(`
+a = 1
+b = 2
+before = RubyVM.opt_plus_count
+a + b
+RubyVM.opt_plus_count - before #=> 1
+a.send(:+, b)
+RubyVM.opt_plus_count - before #=> 1`),
     ],
-    task: [p("整数どうしでこの近道を通った回数を返す `RubyVM.opt_plus_count` を作る。")],
     hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
     answer: [
-      p("`vm_insnhelper.c` で数える。"),
-      c(`
-static unsigned long opt_plus_count;
-
-static VALUE
-vm_opt_plus_count(VALUE self)
-{
-    return ULONG2NUM(opt_plus_count);
-}
-
-static VALUE
-vm_opt_plus(VALUE recv, VALUE obj)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-        OP_UNREDEFINED_P(PLUS, INTEGER)) {
-        opt_plus_count++;
-        return rb_fix_plus_fix(recv, obj);
-    }`),
-      p("`vm.c` の `Init_VM` で登録する。"),
-      c(`
-    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
-    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);`),
+      diff("ruby/vm_insnhelper.c", `
+@@ -7056,11 +7056,20 @@
+ #endif
+ }
+ 
++static unsigned long opt_plus_count;
++
++static VALUE
++vm_opt_plus_count(VALUE self)
++{
++    return ULONG2NUM(opt_plus_count);
++}
++
+ static VALUE
+ vm_opt_plus(VALUE recv, VALUE obj)
+ {
+     if (FIXNUM_2_P(recv, obj) &&
+         OP_UNREDEFINED_P(PLUS, INTEGER)) {
++        opt_plus_count++;
+         return rb_fix_plus_fix(recv, obj);
+     }
+     else if (FLONUM_2_P(recv, obj) &&`),
+      diff("ruby/vm.c", `
+@@ -4779,6 +4779,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
     ],
     spec: spec(`
 RSpec.describe RubyVM do
@@ -891,12 +1028,10 @@ RSpec.describe RubyVM do
     end
   end
 end`),
-    playground: 'puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm\n\na = 1\nb = 2\nbefore = RubyVM.opt_plus_count\n3.times { a + b }\np RubyVM.opt_plus_count - before',
   },
   {
     slug: "free",
     title: "Playground",
-    file: null,
     body: [
       p("課題はありません。どのファイルも自由に書き換えて試せます。"),
       p("`main.rb` に spec を書いて、`./ruby main.rb` で実行してもかまいません。"),
@@ -911,7 +1046,6 @@ RSpec.describe Array do
   end
 end`),
     ],
-    playground: 'puts "Hello, MRI!"',
   },
 ];
 

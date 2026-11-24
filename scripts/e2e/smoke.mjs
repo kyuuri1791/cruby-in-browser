@@ -10,18 +10,27 @@ const h = await launch(BASE);
 const { page } = h;
 const r = reporter();
 const termHeadText = () => page.$eval('.wb-term-head', (e) => e.innerText.replace(/\s+/g, ' ').trim());
+// 目次は折りたたまれているので、開いてから章を選ぶ
+const goToc = async (title) => {
+  if ((await page.$eval('.toc-toggle', (b) => b.getAttribute('aria-expanded'))) !== 'true') await page.click('.toc-toggle');
+  await page.$$eval('.toc-item', (bs, t) => bs.find((b) => b.textContent.includes(t)).click(), title);
+};
 const hasM = () => page.$('.wb-tree-item.active .modified').then(Boolean);
 
 // 1. トップ
 await page.goto(BASE);
 await page.waitForSelector('.lesson-toc', { timeout: 60000 });
-r.expect('トップがそのままアプリで、目次に 18 個並ぶ', (await page.$$('.lesson-toc li')).length === 18);
+r.expect('目次は最初は閉じている', (await page.$$('.lesson-toc li')).length === 0);
+await page.click('.toc-toggle');
+r.expect('トップがそのままアプリで、目次を開くと 18 個並ぶ', (await page.$$('.lesson-toc li')).length === 18);
 r.expect('教材の欄を畳むボタンがない', !(await page.$('.lesson-collapse, .lesson-expand')));
 r.expect('クリアの印がない', !(await page.$('.done-mark')));
 
 // 2. はじめに: 何も書き換えずに実行
 await page.goto(`${BASE}/?lesson=intro`);
 await h.waitEditor();
+r.expect('main.rb は最初は空', (await page.$eval('.cm-content', (e) => e.innerText)).trim() === '');
+await h.replaceText('puts "Hello, MRI!"');
 let t = Date.now();
 await h.click('make');
 await h.click('./ruby main.rb');
@@ -49,6 +58,8 @@ r.expect('実行中もボタンの位置と幅が変わらない', beforeRects =
 // 3. array: 書き換えると M が付く。保存はしない
 await page.goto(`${BASE}/?lesson=array-second`);
 await h.waitEditor();
+r.expect('章を開くと main.rb が開く', (await page.$eval('.wb-file', (e) => e.textContent)) === 'main.rb');
+await h.open('array.c');
 await page.focus('.cm-content');
 await page.keyboard.type('/* hello */');
 r.expect('書き換えると M が付く', await hasM());
@@ -83,31 +94,28 @@ await page.screenshot({ path: SHOTS + 'array-done.png' });
 // 5. 目次で章を切り替える（ページは読み込み直さない）
 const outBefore = await h.out();
 await page.evaluate(() => { window.__noReload = true; });
-await page.$$eval('.toc-item', (bs) => bs.find((b) => b.textContent.includes('String#shout')).click());
+await goToc('String#shout');
 await page.waitForFunction(() => location.search === '?lesson=string-shout');
 r.expect('章を切り替えても読み込み直さない', await page.evaluate(() => window.__noReload === true));
 r.expect('問題文が切り替わる', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('String#shout'));
 r.expect('出力の内容が残る', (await h.out()) === outBefore);
-r.expect('章の C のファイル（string.c）が開く', (await page.$eval('.wb-file', (e) => e.textContent)).endsWith('string.c'));
+r.expect('章を切り替えると main.rb が開く', (await page.$eval('.wb-file', (e) => e.textContent)) === 'main.rb');
 r.expect('課題をチェックのボタンが今の章の spec になる', (await page.$$eval('.wb-term-head button', (bs) => bs.map((b) => b.textContent).join('|'))).includes('bin/rspec spec/03_spec.rb'));
 await h.open('array.c');
 r.expect('章を切り替えても書き換えが残る', await hasM());
 await page.goBack();
 await page.waitForFunction(() => location.search === '?lesson=array-second');
 r.expect('ブラウザの戻るで前の章に戻る', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('Array#second') && (await page.evaluate(() => window.__noReload === true)));
-// main.rb は章ごとに切り替わる。書き換えは章ごとに残る
+// main.rb は全ての章で同じ。書き換えは章を移っても残る
 r.expect('「試すコード」の欄がない', !(await page.$('.try')));
 await h.open('main.rb');
-r.expect('main.rb がこの章のものになっている', (await page.$eval('.cm-content', (e) => e.innerText)).includes('p [:only].second'));
 await h.replaceText('p :edited_in_array');
-await page.$$eval('.toc-item', (bs) => bs.find((b) => b.textContent.includes('nil.to_s')).click());
+await goToc('nil.to_s');
 await page.waitForFunction(() => location.search === '?lesson=nil-to-s');
 await h.open('main.rb');
-r.expect('章を切り替えると main.rb もその章のものになる', (await page.$eval('.cm-content', (e) => e.innerText)).includes('x=#{nil}'));
+r.expect('章を切り替えても main.rb の書き換えが残る', (await page.$eval('.cm-content', (e) => e.innerText)).includes(':edited_in_array'));
 await page.goBack();
 await page.waitForFunction(() => location.search === '?lesson=array-second');
-await h.open('main.rb');
-r.expect('戻ると、その章で書き換えた main.rb が残っている', (await page.$eval('.cm-content', (e) => e.innerText)).includes(':edited_in_array'));
 // spec/ に全章の spec がある
 await page.$$eval('.wb-tree-folder', (fs) => fs.filter((f) => f.textContent.includes('spec') && f.textContent.includes('›')).forEach((f) => f.click()));
 const specNames = await page.$$eval('.wb-tree-item .name', (es) => es.map((e) => e.textContent).filter((t) => t.endsWith('_spec.rb')));
@@ -116,6 +124,7 @@ r.expect('spec フォルダに課題のある全て（16 個）の spec があ�
 // 6. 再読み込みすると元に戻る
 await page.goto(`${BASE}/?lesson=array-second`);
 await h.waitEditor();
+await h.open('array.c');
 r.expect('再読み込みすると書き換えが消える', !(await hasM()) && !(await page.$eval('.cm-content', (e) => e.innerText)).includes('ary_second'));
 
 // 7. コンパイルエラー → クリックで行へ移動
@@ -166,11 +175,14 @@ r.expect('Makefile は読み取り専用で書き換えられない', !(await ha
 // 11. version
 await page.goto(`${BASE}/?lesson=version`);
 await h.waitEditor();
+await h.open('version.c');
 await h.replaceText(answers.version['version.c']);
 await h.click('make');
 await h.click('bin/rspec');
 r.expect('version: spec が通る', (await h.out()).includes('2 examples, 0 failures'), await h.out());
 r.expect('spec のファイル名に章番号が付く', (await h.out()).includes('$ bin/rspec spec/01_spec.rb'));
+await h.open('main.rb');
+await h.replaceText('puts RUBY_DESCRIPTION');
 await h.click('make');
 await h.click('./ruby main.rb');
 r.expect('version: main.rb の RUBY_DESCRIPTION が myruby で始まる', /^myruby 4\./m.test(await h.out()), await h.out());

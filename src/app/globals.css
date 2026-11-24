@@ -110,6 +110,20 @@ button.link:hover { text-decoration: underline; background: none; }
 .lesson-text ul { margin: 0 0 12px; padding-left: 1.2em; }
 .codeblock { margin: 0 0 12px; background: var(--chrome); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; }
 .codeblock code { background: none; padding: 0; font-size: inherit; }
+
+/* 解答例の差分（GitHub の差分の見た目） */
+.diffblock { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.diffblock figcaption { padding: 6px 12px; background: var(--chrome); border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.diff-scroll { overflow-x: auto; }
+.diffblock table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+.diffblock td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.diffblock .d-num { width: 1%; min-width: 3.2em; text-align: right; color: var(--faint); user-select: none; }
+.diffblock .d-code { width: 100%; }
+.diffblock .d-add { background: #e6ffec; }
+.diffblock .d-add .d-num { background: #ccffd8; }
+.diffblock .d-del { background: #ffebe9; }
+.diffblock .d-del .d-num { background: #ffd7d5; }
+.diffblock .d-hunk td { background: #ddf4ff; color: var(--muted); }
 .note { margin: 0 0 12px; padding: 8px 12px; background: var(--chrome); border-radius: 6px; font-size: 13px; color: var(--muted); }
 .task { margin: 18px 0 12px; padding: 12px 14px; background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
 .task p:last-child { margin-bottom: 0; }

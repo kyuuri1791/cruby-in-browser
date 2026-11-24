@@ -22,7 +22,6 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
   const lesson = lessons[index];
   const specs = lessons.filter((l) => l.spec).map((l) => ({ slug: l.slug, spec: l.spec! }));
   const [tocOpen, setTocOpen] = useState(false);
-  const [firstFile] = useState(() => lessons.find((l) => l.slug === initialSlug)?.file ?? null);
 
   const show = (next: string, push: boolean) => {
     const l = lessons.find((x) => x.slug === next);
@@ -30,7 +29,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
     setSlug(next);
     setTocOpen(false);
     if (push) window.history.pushState(null, "", next === lessons[0].slug ? "/" : `/?lesson=${next}`);
-    if (l.file) workbench.current?.openFile(l.file);
+    workbench.current?.openFile("main.rb");
     textRef.current?.scrollTo({ top: 0 });
   };
 
@@ -75,7 +74,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
           <div className="lesson-scroll" ref={textRef}>
             <article className="lesson-text" key={lesson.slug}>
               <h1>{lesson.title}</h1>
-              <LessonBody blocks={lesson.body} />
+              {lesson.body && <LessonBody blocks={lesson.body} />}
               {lesson.task && (
                 <section className="task">
                   <h2>課題</h2>
@@ -106,9 +105,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
         <Workbench
           ref={workbench}
           current={{ slug: lesson.slug, spec: lesson.spec ?? null }}
-          initialFile={firstFile}
           specs={specs}
-          mainRb={lesson.playground}
         />
       }
     />

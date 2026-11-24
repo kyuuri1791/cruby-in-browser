@@ -11,12 +11,8 @@ import { specPath } from "@/lib/lessons";
 type Props = {
   /** 今開いている章（課題をチェックで、この章の spec を実行する） */
   current: { slug: string; spec: string | null };
-  /** 最初に開く C のファイル */
-  initialFile: string | null;
   /** 全章の spec（spec/ フォルダに並べる） */
   specs: { slug: string; spec: string }[];
-  /** 今の章の main.rb の最初の内容（main.rb は章ごとに持つ） */
-  mainRb: string;
   ref?: Ref<WorkbenchHandle>;
 };
 
@@ -39,29 +35,29 @@ const isRuby = (name: string) => name.endsWith(".rb") || name.startsWith("bin/")
 // 書き換えられるのは C のソースと main.rb だけ
 const isReadOnly = (name: string) => name === MAKEFILE || name === DOT_RSPEC || name.startsWith("spec/") || name.startsWith("bin/");
 
-export default function Workbench({ current, initialFile, specs, mainRb, ref }: Props) {
+export default function Workbench({ current, specs, ref }: Props) {
   const specFile = current.spec ? specPath(current.slug) : null;
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // 開いているファイル（タブは 1 つだけで、別のファイルを開くと差し替える）
-  const [file, setFile] = useState<string | null>(initialFile ?? MAIN);
+  const [file, setFile] = useState<string | null>(MAIN);
   const explorer = useResizable(190, 120, 360, "x");
   const panel = useResizable(260, 120, 640, "y", true);
   // C のファイル: 元の内容と、書き換えたものだけ
   const [originals, setOriginals] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({});
-  // Ruby のファイル: 元の内容（章で決まる）と、書き換えたものだけ
+  // Ruby のファイル: 元の内容と、書き換えたものだけ。main.rb は最初は空で、全ての章で同じものを使う
   const rbOriginals = useMemo(() => {
-    const o: Record<string, string> = { [MAIN]: mainRb };
+    const o: Record<string, string> = { [MAIN]: "" };
     for (const s of specs) o[specPath(s.slug)] = s.spec;
     o[BIN_RSPEC] = BIN_RSPEC_SRC;
     o[DOT_RSPEC] = DOT_RSPEC_SRC;
     return o;
-  }, [mainRb, specs]);
-  // 書き換えはブラウザには保存しない。ページを開いている間だけ、章を移っても引き継ぐ（sources.ts のメモリ上）
+  }, [specs]);
+  // 書き換えはブラウザには保存しない。ページを開いている間だけ残す（sources.ts のメモリ上）
   const [rbEdits, setRbEdits] = useState<Record<string, string>>(() => {
     const e: Record<string, string> = {};
-    for (const path of [`${MAIN}@${current.slug}`, ...specs.map((s) => specPath(s.slug))]) {
+    for (const path of [MAIN, ...specs.map((s) => specPath(s.slug))]) {
       const t = getEdit(path);
       if (t !== undefined) e[path] = t;
     }
@@ -122,10 +118,7 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
       .catch((err) => setLoadError(String(err.message ?? err)));
   }, [file, originals, vfsFiles]);
 
-  // main.rb は章ごとに別の中身を持つ（ページを開いている間だけ）。他の章の書き換えは sources.ts のメモリから読む
-  const mainKey = `${MAIN}@${current.slug}`;
-  const editKey = (name: string) => (name === MAIN ? mainKey : name);
-  const rbEdited = (name: string) => rbEdits[editKey(name)] ?? getEdit(editKey(name));
+  const rbEdited = (name: string) => rbEdits[name];
   const originalOf = (name: string | null) => (name === null ? undefined : isRuby(name) ? rbOriginals[name] : originals[name]);
   const textOf = (name: string | null) =>
     name === null ? undefined : isRuby(name) ? (rbEdited(name) ?? rbOriginals[name]) : (edits[name] ?? originals[name]);
@@ -143,14 +136,13 @@ export default function Workbench({ current, initialFile, specs, mainRb, ref }: 
   }, [file, text]);
 
   const setEdited = (name: string, value: string | undefined) => {
-    const key = editKey(name);
     (isRuby(name) ? setRbEdits : setEdits)((e) => {
       const next = { ...e };
-      if (value === undefined) delete next[key];
-      else next[key] = value;
+      if (value === undefined) delete next[name];
+      else next[name] = value;
       return next;
     });
-    setEdit(key, value);
+    setEdit(name, value);
   };
 
   const onChange = (value: string) => {
