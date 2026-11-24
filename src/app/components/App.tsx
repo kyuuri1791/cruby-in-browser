@@ -74,7 +74,19 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
           <div className="lesson-scroll" ref={textRef}>
             <article className="lesson-text" key={lesson.slug}>
               <h1>{lesson.title}</h1>
-              {lesson.body && <LessonBody blocks={lesson.body} />}
+              {lesson.body && <LessonBody blocks={lesson.body} copyable />}
+              {lesson.refs && (
+                <section className="refs">
+                  <h2>参考文献</h2>
+                  <ul>
+                    {lesson.refs.map((r) => (
+                      <li key={r.url}>
+                        <a href={r.url} target="_blank">{r.title}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               {lesson.task && (
                 <section className="task">
                   <h2>課題</h2>

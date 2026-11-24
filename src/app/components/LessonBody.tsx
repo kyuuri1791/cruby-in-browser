@@ -1,4 +1,22 @@
+import { useState } from "react";
 import type { Block } from "@/lib/lessons";
+
+/** コードブロック。copyable なら、右上のボタンで中身をクリップボードにコピーできる */
+function CodeBlock({ lang, code, copyable }: { lang: string; code: string; copyable: boolean }) {
+  const [copied, setCopied] = useState(false);
+  if (!copyable) return <pre className={`codeblock lang-${lang}`}><code>{code}</code></pre>;
+  const copy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="codeblock-wrap">
+      <pre className={`codeblock lang-${lang}`}><code>{code}</code></pre>
+      <button className="copy-btn" onClick={copy} aria-label="コピー">{copied ? "コピーしました" : "コピー"}</button>
+    </div>
+  );
+}
 
 /** `...` をインラインのコードにする */
 function Inline({ text }: { text: string }) {
@@ -49,7 +67,8 @@ function Diff({ file, diff }: { file: string; diff: string }) {
   );
 }
 
-export default function LessonBody({ blocks }: { blocks: Block[] }) {
+/** copyable: コードブロックにコピーのボタンを付ける（課題の前の手順だけ） */
+export default function LessonBody({ blocks, copyable = false }: { blocks: Block[]; copyable?: boolean }) {
   return (
     <>
       {blocks.map((b, i) => {
@@ -57,7 +76,7 @@ export default function LessonBody({ blocks }: { blocks: Block[] }) {
           case "p":
             return <p key={i}><Inline text={b.text} /></p>;
           case "code":
-            return <pre key={i} className={`codeblock lang-${b.lang}`}><code>{b.code}</code></pre>;
+            return <CodeBlock key={i} lang={b.lang} code={b.code} copyable={copyable} />;
           case "list":
             return <ul key={i}>{b.items.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ul>;
           case "note":

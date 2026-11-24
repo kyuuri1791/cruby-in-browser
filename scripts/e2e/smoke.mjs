@@ -105,7 +105,7 @@ await h.open('array.c');
 r.expect('章を切り替えても書き換えが残る', await hasM());
 await page.goBack();
 await page.waitForFunction(() => location.search === '?lesson=array-second');
-r.expect('ブラウザの戻るで前の章に戻る', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('Array#second') && (await page.evaluate(() => window.__noReload === true)));
+r.expect('ブラウザの戻るで前の章に戻る', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('Array#at') && (await page.evaluate(() => window.__noReload === true)));
 // main.rb は全ての章で同じ。書き換えは章を移っても残る
 r.expect('「試すコード」の欄がない', !(await page.$('.try')));
 await h.open('main.rb');

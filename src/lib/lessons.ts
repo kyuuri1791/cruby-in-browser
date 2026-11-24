@@ -11,10 +11,14 @@ export type Block =
   /** 解答例の差分（diff -U3 の形。@@ の行・空白・+・- で始まる行） */
   | { type: "diff"; file: string; diff: string };
 
+export type Ref = { title: string; url: string };
+
 export type Lesson = {
   slug: string;
   title: string;
   body?: Block[];
+  /** 参考文献（人が書いた日本語の解説）。課題の上に並べる */
+  refs?: Ref[];
   /** 手を動かす課題の説明 */
   task?: Block[];
   hints?: Block[];
@@ -31,6 +35,7 @@ export const specPath = (slug: string) => {
 };
 
 const p = (text: string): Block => ({ type: "p", text });
+const c = (code: string): Block => ({ type: "code", lang: "c", code: code.trim() });
 const rb = (code: string): Block => ({ type: "code", lang: "ruby", code: code.trim() });
 const list = (...items: string[]): Block => ({ type: "list", items });
 const note = (text: string): Block => ({ type: "note", text });
@@ -53,6 +58,18 @@ export const lessons: Lesson[] = [
   {
     slug: "version",
     title: "ruby -v の表示",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p RUBY_VERSION.equal?(Ruby::VERSION)
+p defined?(Ruby::COPYRIGHT)
+p defined?(RUBY_COPYRIGHT)`),
+      p("2. `version.c` の `Init_version` の `\"COPYRIGHT\"` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "(2) MRI ソースコードの構造（Ruby Hack Challenge）", url: "https://github.com/ko1/rubyhackchallenge/blob/master/JA/2_mri_structure.md" },
+      { title: "rb_define_global_const（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_define_global_const.html" },
+    ],
     task: [
       p("`RUBY_DESCRIPTION` の先頭の `ruby` を `myruby` に変える。"),
       rb(`
@@ -83,15 +100,36 @@ end`),
   },
   {
     slug: "array-second",
-    title: "Array#second",
+    title: "Array#at はどこにある？",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p Array.instance_method(:first).source_location
+p Array.instance_method(:at).source_location`),
+      p("2. `array.c` の `rb_ary_at` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "rb_ary_at called\\n");`),
+      rb(`
+p [1, 2, 3].at(1)
+p [1, 2, 3][1]
+p [1, 2, 3].dig(1)`),
+      p("3. `array.c` の `Init_Array` の `\"at\"` の行を消し、`make` して 2 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "(3) 演習：メソッドの追加（Ruby Hack Challenge）", url: "https://github.com/ko1/rubyhackchallenge/blob/master/JA/3_practice.md" },
+      { title: "rb_define_method（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_define_method.html" },
+      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
+    ],
     task: [
-      p("2 番目の要素を返す `Array#second` を作る。"),
+      p("`Array#second` を作る。"),
       rb(`
 [1, 2, 3].second #=> 2
 [1].second       #=> nil
 [].second        #=> nil`),
     ],
-    hints: [note("配列の要素は `rb_ary_entry(ary, i)` で取れます。範囲外なら `nil` を返します。")],
+    hints: [
+      note("メソッドの登録は `rb_define_method(クラス, \"名前\", 関数, 引数の数)` です。"),
+      note("配列の要素は `rb_ary_entry(ary, i)` で取れます。範囲外なら `nil` を返します。"),
+    ],
     answer: [
       diff("ruby/array.c", `
 @@ -9014,6 +9014,12 @@
@@ -142,14 +180,35 @@ end`),
   {
     slug: "string-shout",
     title: "String#shout",
+    body: [
+      p("1. `string.c` の `rb_str_upcase` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "rb_str_upcase called\\n");`),
+      rb(`
+p "a".upcase
+p :a.upcase
+p "a".capitalize`),
+    ],
+    refs: [
+      { title: "rb_funcall（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_funcall.html" },
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
+    ],
     task: [
       p("大文字にして `!` を付けた文字列を返す `String#shout` を作る。レシーバは変えない。"),
       rb(`
 s = "hello"
 s.shout #=> "HELLO!"
-s       #=> "hello"`),
+s       #=> "hello"
+
+class Loud < String
+  def upcase = "LOUD"
+end
+Loud.new("hello").shout #=> "LOUD!"`),
     ],
-    hints: [note("文字列の末尾に C の文字列をつなげるには `rb_str_cat_cstr(str, \"?\")` のように書きます。")],
+    hints: [
+      note("C から Ruby のメソッドを呼ぶには `rb_funcall(recv, rb_intern(\"upcase\"), 0)` のように書きます。"),
+      note("文字列の末尾に C の文字列をつなげるには `rb_str_cat_cstr(str, \"?\")` のように書きます。"),
+    ],
     answer: [
       diff("ruby/string.c", `
 @@ -16353,6 +16353,14 @@
@@ -187,12 +246,32 @@ RSpec.describe String do
       str = +"ruby"
       expect { str.shout }.not_to change { str }
     end
+
+    context "upcase を再定義したサブクラスのとき" do
+      it "再定義した upcase を使う" do
+        loud = Class.new(String) { def upcase = "LOUD" }
+        expect(loud.new("hello").shout).to eq("LOUD!")
+      end
+    end
   end
 end`),
   },
   {
     slug: "integer-triple",
     title: "Integer#triple",
+    body: [
+      p("1. `numeric.c` の `rb_int_mul` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで何が出力されるか。"),
+      c(`fprintf(stderr, "rb_int_mul: %s\\n", FIXNUM_P(x) ? "Fixnum" : "Bignum");`),
+      rb(`
+p 7 * 3
+p (2**70) * 3
+p 7.send(:*, 3)`),
+    ],
+    refs: [
+      { title: "How Ruby Encodes References - Ruby Tiny Objects Explained（AppFolio Engineering）", url: "https://engineering.appfolio.com/appfolio-engineering/2019/6/25/how-ruby-encodes-references-ruby-tiny-objects-explained" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
     task: [
       p("3 倍した値を返す `Integer#triple` を作る。"),
       rb(`
@@ -200,7 +279,10 @@ end`),
 -5.triple      #=> -15
 (2**70).triple #=> 3541774862152233910272`),
     ],
-    hints: [note("C の整数から Ruby の Integer（Fixnum）を作るには `INT2FIX(42)` のように書きます。")],
+    hints: [
+      note("`rb_int_mul(x, y)` は Integer の `x * y` を返します。"),
+      note("C の整数から Ruby の Integer（Fixnum）を作るには `INT2FIX(42)` のように書きます。"),
+    ],
     answer: [
       diff("ruby/numeric.c", `
 @@ -6490,6 +6490,12 @@
@@ -251,6 +333,16 @@ end`),
   {
     slug: "hash-sum-values",
     title: "Hash#sum_values",
+    body: [
+      p("1. `hash.c` の `each_value_i` の `return ST_CONTINUE;` を `return ST_STOP;` に変えて `make` し、`main.rb` に次を書いて実行する。"),
+      rb(`
+{ a: 1, b: 2, c: 3 }.each_value { |v| p v }
+p({ a: 1, b: 2, c: 3 }.values)`),
+    ],
+    refs: [
+      { title: "第 3 章「名前と名前表」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/name.html" },
+      { title: "Hash#each_value（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Hash/i/each_value.html" },
+    ],
     task: [
       p("全ての value の合計を返す `Hash#sum_values` を作る。"),
       rb(`
@@ -258,6 +350,7 @@ end`),
 { x: 1, y: 0.5 }.sum_values     #=> 1.5
 {}.sum_values                   #=> 0`),
     ],
+    hints: [note("`rb_hash_foreach(hash, func, arg)` は、要素ごとに `func(key, value, arg)` を呼びます。")],
     answer: [
       diff("ruby/hash.c", `
 @@ -7758,6 +7758,22 @@
@@ -318,6 +411,25 @@ end`),
   {
     slug: "nil-to-s",
     title: "nil.to_s",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p nil.to_s.frozen?
+p nil.to_s.equal?(nil.to_s)
+p "".equal?("")`),
+      p("2. `object.c` の `rb_nil_to_s` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "rb_nil_to_s called\\n");`),
+      rb(`
+p nil.to_s
+p "#{nil}"
+p [1, nil].join
+p nil.inspect`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 5 - Changing object types on the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/05/advent-of-yarv-part-5.html" },
+      { title: "第 2 章「オブジェクト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/object.html" },
+      { title: "rb_str_new_cstr（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_str_new_cstr.html" },
+    ],
     task: [
       p("`nil.to_s` が `\"(nil)\"` を返すようにする。"),
       rb(`
@@ -353,6 +465,20 @@ end`),
   {
     slug: "immediate",
     title: "Object#immediate?",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p 1.equal?(1)
+p "a".equal?("a")
+p (2**40).equal?(2**40)
+p 1.object_id, 2.object_id, 3.object_id
+p Object.new.object_id`),
+    ],
+    refs: [
+      { title: "How Ruby Encodes References - Ruby Tiny Objects Explained（AppFolio Engineering）", url: "https://engineering.appfolio.com/appfolio-engineering/2019/6/25/how-ruby-encodes-references-ruby-tiny-objects-explained" },
+      { title: "Rubyのobject_id（Masaki Hara）", url: "https://speakerdeck.com/qnighy/rubynoobject-id" },
+      { title: "第 2 章「オブジェクト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/object.html" },
+    ],
     task: [
       p("即値なら `true`、そうでなければ `false` を返す `Object#immediate?` を作る。"),
       rb(`
@@ -420,6 +546,21 @@ end`),
   {
     slug: "proc-kind",
     title: "Proc#kind",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+pr = proc { |a, b| [a, b] }
+l = lambda { |a, b| [a, b] }
+p pr.lambda?, l.lambda?
+p pr.call(1)
+p l.call(1)`),
+      p("2. `proc.c` の `rb_proc_lambda_p` の `return` の行を `return Qtrue;` に変えて `make` し、1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
+      { title: "How Ruby Borrowed a Decades Old Idea From Lisp（Pat Shaughnessy）", url: "https://patshaughnessy.net/2012/9/18/how-ruby-borrowed-a-decades-old-idea-from-lisp" },
+      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+    ],
     task: [
       p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。"),
       rb(`
@@ -480,6 +621,26 @@ end`),
   {
     slug: "define-method",
     title: "Module#define_private_method",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class Foo
+  private
+  def a = 1
+  define_method(:b) { 2 }
+end
+Foo.define_method(:c) { 3 }
+
+p Foo.private_method_defined?(:a)
+p Foo.private_method_defined?(:b)
+p Foo.private_method_defined?(:c)`),
+      p("2. `proc.c` の `rb_mod_define_method` の `scope_visi = CREF_SCOPE_VISI(cref);` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Bug #19749: Confirm correct behaviour when attaching private method with #define_method（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19749" },
+      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
+      { title: "Module#private（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/private.html" },
+    ],
     task: [
       p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
       rb(`
@@ -548,6 +709,25 @@ end`),
   {
     slug: "module-mixins",
     title: "Module#mixins",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+module A; end
+module B; end
+
+class C
+  include A
+  prepend B
+end
+
+p C.ancestors`),
+      p("2. `class.c` の `rb_mod_ancestors` の `if (p != RCLASS_ORIGIN(p)) continue;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Better Know A Ruby Thing: Method Lookup（Noel Rappin）", url: "https://buttondown.com/noelrap/archive/better-know-a-ruby-thing-method-lookup" },
+      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
+      { title: "Module#prepend（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/prepend.html" },
+    ],
     task: [
       p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。"),
       rb(`
@@ -628,6 +808,22 @@ end`),
   {
     slug: "attr-predicate",
     title: "Module#attr_predicate",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class C
+  attr_reader :x
+  def y = @y
+end
+
+c = C.new
+TracePoint.new(:call, :c_call) { |tp| p [tp.event, tp.method_id] }.enable { c.x; c.y }`),
+    ],
+    refs: [
+      { title: "Understanding why attr_accessor in Ruby is faster than a regular method（Dmitry Tsepelev）", url: "https://dmitrytsepelev.dev/attr-accessor-in-ruby" },
+      { title: "Feature #19708: Support attr_reader :foo?（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19708" },
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+    ],
     task: [
       p("インスタンス変数の値を返す `名前?` のメソッドを定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。"),
       rb(`
@@ -714,6 +910,23 @@ end`),
   {
     slug: "kernel-try",
     title: "Kernel#try",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+o = Object.new
+def o.respond_to_missing?(name, include_private)
+  puts "respond_to_missing? #{name}"
+  false
+end
+
+p [o].flatten
+p Array(o)`),
+    ],
+    refs: [
+      { title: "Bug #11465: Array#flatten calls to_ary on objects with method_missing even if respond_to_missing?(:to_ary) returns false（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/11465" },
+      { title: "Implicit Conversions（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/4.0/language/implicit_conversion_rdoc.html" },
+      { title: "Object#respond_to_missing?（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Object/i/respond_to_missing=3f.html" },
+    ],
     task: [
       p("メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。"),
       rb(`
@@ -721,7 +934,7 @@ end`),
 1.try(:+, 2)             #=> 3
 nil.try(:no_such_method) #=> nil`),
     ],
-    hints: [note("`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
+    hints: [note("`vm_eval.c` の `rb_check_funcall(recv, mid, argc, argv)` は、呼べなければ `Qundef` を返します。`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
     answer: [
       diff("ruby/vm_eval.c", `
 @@ -2967,6 +2967,14 @@
@@ -774,13 +987,25 @@ end`),
   {
     slug: "tap-eval",
     title: "Kernel#tap_eval",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+x = 10
+o = Object.new
+p o.instance_exec { [equal?(o), x] }`),
+      p("2. `vm_eval.c` の `yield_under` の `new_captured.self = self;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Understanding instance exec in ruby（BigBinary）", url: "https://www.bigbinary.com/blog/understanding-instance-exec-in-ruby" },
+      { title: "第 17 章「動的評価」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/anyeval.html" },
+    ],
     task: [
       p("ブロックの中の `self` をレシーバにして実行し、レシーバを返す `Kernel#tap_eval` を作る。"),
       rb(`
 [1, 2].tap_eval { push(3) } #=> [1, 2, 3]
 [1, 2].tap { push(3) }      #=> NoMethodError`),
     ],
-    hints: [note("`yield_under` は、今実行中のフレームに渡されたブロックを使います。C の関数から `rb_obj_instance_exec` を呼べば、その関数に渡されたブロックがそのまま使われます。")],
+    hints: [note("`instance_exec` の本体は `vm_eval.c` の `rb_obj_instance_exec` です。C の関数から呼ぶと、その関数に渡されたブロックがそのまま使われます。")],
     answer: [
       diff("ruby/vm_eval.c", `
 @@ -2967,6 +2967,13 @@
@@ -829,12 +1054,30 @@ end`),
   {
     slug: "method-missing",
     title: "method_missing",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class Foo
+  def method_missing(name, *args) = [name, args]
+end
+p Foo.new.bar(1, 2)
+
+begin; Object.new.bar; rescue NameError => e; p e; end
+begin; Object.new.puts; rescue NameError => e; p e; end
+begin; bar; rescue NameError => e; p e; end`),
+    ],
+    refs: [
+      { title: "BasicObject#method_missing（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/BasicObject/i/method_missing.html" },
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
+    ],
     task: [
       p("見つからないメソッドを呼んだときのメッセージの `undefined method` を `no such method` に変える。"),
       rb(`
 Object.new.foo
 #=> no such method 'foo' for an instance of Object (NoMethodError)`),
     ],
+    hints: [note("メッセージの書式は `vm_eval.c` にあります。")],
     answer: [
       diff("ruby/vm_eval.c", `
 @@ -978,7 +978,7 @@
@@ -871,6 +1114,22 @@ end`),
   {
     slug: "bmethod-proc",
     title: "define_method と lambda",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+pr = proc { |a, b| [a, b] }
+p pr.call(1)
+
+class Foo; end
+Foo.define_method(:m, pr)
+p Foo.new.m(1)`),
+      p("2. `proc.c` の `rb_mod_define_method_with_visibility` の `proc->header.is_lambda = TRUE;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Feature #16499: define_method(non_lambda) should not change the semantics of the given Proc（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/16499" },
+      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
+      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+    ],
     task: [
       p("ブロックで定義したメソッドを proc として扱い、足りない引数を `nil` で埋めるようにする。lambda を渡したときは、今まで通り引数の数を確かめる。"),
       rb(`
@@ -945,8 +1204,27 @@ end`),
   {
     slug: "opt-plus",
     title: "opt_plus 命令",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "fast path\\n");`),
+      rb(`
+a = 1
+b = 2
+p a + b
+p a.send(:+, b)
+p "x" + "y"`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
     task: [
-      p("`+` を `opt_plus` 命令の近道（整数どうしをメソッドを呼ばずに足す）で計算した回数を返す `RubyVM.opt_plus_count` を作る。"),
+      p("2 の `fast path` を通った回数を返す `RubyVM.opt_plus_count` を作る。"),
       rb(`
 a = 1
 b = 2

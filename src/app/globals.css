@@ -110,6 +110,16 @@ button.link:hover { text-decoration: underline; background: none; }
 .lesson-text ul { margin: 0 0 12px; padding-left: 1.2em; }
 .codeblock { margin: 0 0 12px; background: var(--chrome); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; }
 .codeblock code { background: none; padding: 0; font-size: inherit; }
+.codeblock-wrap { position: relative; }
+.copy-btn { position: absolute; top: 6px; right: 6px; padding: 1px 8px; font-size: 11px; color: var(--muted); background: var(--bg); opacity: 0; transition: opacity 0.1s; }
+.codeblock-wrap:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .copy-btn { opacity: 1; } }
+
+/* 参考文献 */
+.lesson-text .refs { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--border); }
+.lesson-text .refs h2 { color: var(--muted); }
+.lesson-text .refs ul { margin: 0; padding-left: 1.2em; }
+.lesson-text .refs li { font-size: 13px; line-height: 1.7; }
 
 /* 解答例の差分（GitHub の差分の見た目） */
 .diffblock { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
