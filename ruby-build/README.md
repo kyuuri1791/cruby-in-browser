@@ -11,10 +11,15 @@
 
 ## 手順
 
-1. Ruby のソースを取ってくる: `git clone --depth 1 https://github.com/ruby/ruby.git spike/ruby`
+1. Ruby のソースを取ってくる。サイトで配っているのは、次のコミットでビルドしたもの（変えたら `src/app/components/AboutDialog.tsx` の `CRUBY_REVISION` も直す）
+   ```
+   git init spike/ruby && cd spike/ruby
+   git fetch --depth 1 https://github.com/ruby/ruby.git a28ce4f87653cc29eb67ec31f7dfdaadcf3436a3
+   git checkout FETCH_HEAD
+   ```
 2. sysroot を用意する: `@yowasp/clang` の `gen/llvm-resources.tar` を `spike/yowasp-sysroot/` に展開する
 3. `spike/fakesdk/bin/clang` を用意する。`--target=wasm32-wasip1 --sysroot=...` を付けて clang を呼ぶラッパーで、llvm-ar なども同じ場所に置く
-4. 同じ Ruby master をネイティブでビルドして `spike/baseruby` に入れる（BASERUBY に使う。バージョンが違うと make install が失敗する）
+4. 同じコミットの Ruby をネイティブでビルドして `spike/baseruby` に入れる（BASERUBY に使う。バージョンが違うと make install が失敗する）
 5. wasm 向けに PIC で、拡張を静的リンクしてビルドし、`-fvisibility=hidden` を Makefile から外してから `make WASMOPT=: ruby` する
    ```
    cd spike/ruby && ./autogen.sh

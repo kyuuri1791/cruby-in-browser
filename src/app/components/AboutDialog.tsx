@@ -4,6 +4,9 @@ import { useRef, type ReactNode } from "react";
 
 // 「このサイトについて」。ヘッダーのボタンをクリックすると、画面の中央にダイアログで出す（画面は移らない）
 
+// ビルドに使った CRuby のコミット（ruby-build/README.md の手順 1 と同じ）
+const CRUBY_REVISION = "a28ce4f87653cc29eb67ec31f7dfdaadcf3436a3";
+
 const components = [
   { name: "Ruby（CRuby）", what: "Ruby 本体と C のソース", license: "Ruby License または BSD-2-Clause", files: [["COPYING", "/licenses/ruby-COPYING.txt"], ["BSDL", "/licenses/ruby-BSDL.txt"], ["LEGAL", "/licenses/ruby-LEGAL.txt"]], url: "https://github.com/ruby/ruby" },
   { name: "YoWASP Clang/LLD（LLVM）", what: "clang・wasm-ld・wasi-libc", license: "ISC、Apache-2.0 with LLVM Exceptions（LLVM）、wasi-libc は各ファイルのライセンス", files: [], url: "https://github.com/YoWASP/clang" },
@@ -29,6 +32,12 @@ export default function AboutDialog() {
           </div>
           <p>
             <a href="https://github.com/ko1/rubyhackchallenge" target="_blank">Ruby Hack Challenge</a> に着想を得た非公式サイトです。
+          </p>
+          <h2>CRuby の版</h2>
+          <p>
+            4.1.0dev、{""}
+            <a href={`https://github.com/ruby/ruby/tree/${CRUBY_REVISION}`} target="_blank"><code>{CRUBY_REVISION.slice(0, 10)}</code></a>
+            （2026-11-17）。エディタの C のファイルはこのコミットのソースです。
           </p>
           <h2>仕組み</h2>
           <ul>

@@ -11,13 +11,14 @@ export type Block =
   /** 解答例の差分（diff -U3 の形。@@ の行・空白・+・- で始まる行） */
   | { type: "diff"; file: string; diff: string };
 
+/** 参考文献（人が書いた解説やリファレンス）。title の後ろの括弧に、書いた人や載っている場所を入れる */
 export type Ref = { title: string; url: string };
 
 export type Lesson = {
   slug: string;
   title: string;
   body?: Block[];
-  /** 参考文献（人が書いた日本語の解説）。課題の上に並べる */
+  /** 参考文献。手順の後、課題の上に並べる */
   refs?: Ref[];
   /** 手を動かす課題の説明 */
   task?: Block[];
@@ -52,6 +53,8 @@ export const lessons: Lesson[] = [
         "エクスプローラーの `ruby/` にある C のファイルを書き換える",
         "`make` でビルド、`./ruby main.rb` で実行、`bin/rspec spec/…` で今の課題の spec を実行",
       ),
+      p("このサイトは、CRuby の中を実際に動かして確かめるためのハンズオン環境です。仕組みの説明は書いていないので、手順を試したら各章の参考文献を読んでください。"),
+      p("課題で扱うのは、オブジェクトの表現、メソッドの定義と探索、ブロック、VM の命令の一部です。GC・パーサ・JIT は扱いません。"),
       note("標準ライブラリと rspec が入っています。ページを再読み込みすると、書き換えた内容は元に戻ります。"),
     ],
   },
@@ -189,8 +192,8 @@ p :a.upcase
 p "a".capitalize`),
     ],
     refs: [
-      { title: "rb_funcall（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_funcall.html" },
       { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "rb_funcall（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_funcall.html" },
       { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
     ],
     task: [
@@ -427,8 +430,8 @@ p nil.inspect`),
     ],
     refs: [
       { title: "Advent of YARV: Part 5 - Changing object types on the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/05/advent-of-yarv-part-5.html" },
-      { title: "第 2 章「オブジェクト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/object.html" },
       { title: "rb_str_new_cstr（るりま）", url: "https://docs.ruby-lang.org/ja/latest/function/rb_str_new_cstr.html" },
+      { title: "第 2 章「オブジェクト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/object.html" },
     ],
     task: [
       p("`nil.to_s` が `\"(nil)\"` を返すようにする。"),
@@ -638,8 +641,8 @@ p Foo.private_method_defined?(:c)`),
     ],
     refs: [
       { title: "Bug #19749: Confirm correct behaviour when attaching private method with #define_method（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19749" },
-      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
       { title: "Module#private（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/private.html" },
+      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
     ],
     task: [
       p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
@@ -725,8 +728,8 @@ p C.ancestors`),
     ],
     refs: [
       { title: "Better Know A Ruby Thing: Method Lookup（Noel Rappin）", url: "https://buttondown.com/noelrap/archive/better-know-a-ruby-thing-method-lookup" },
-      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
       { title: "Module#prepend（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/prepend.html" },
+      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
     ],
     task: [
       p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。"),
@@ -1067,8 +1070,8 @@ begin; Object.new.puts; rescue NameError => e; p e; end
 begin; bar; rescue NameError => e; p e; end`),
     ],
     refs: [
-      { title: "BasicObject#method_missing（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/BasicObject/i/method_missing.html" },
       { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "BasicObject#method_missing（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/BasicObject/i/method_missing.html" },
       { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
     ],
     task: [
@@ -1312,17 +1315,6 @@ end`),
     title: "Playground",
     body: [
       p("課題はありません。どのファイルも自由に書き換えて試せます。"),
-      p("`main.rb` に spec を書いて、`./ruby main.rb` で実行してもかまいません。"),
-      rb(`
-require "rspec/autorun"
-
-RSpec.describe Array do
-  describe "#second" do
-    it "2 番目の要素を返す" do
-      expect([1, 2, 3].second).to eq(2)
-    end
-  end
-end`),
     ],
   },
 ];
