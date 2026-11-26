@@ -1,6 +1,7 @@
 // 小さな make。GNU make の書き方のうち、この教材の Makefile に必要な分を実装している。
 //   変数（= := += ?=）、$(VAR) ${VAR} $(VAR:%.c=%.o)、自動変数 $@ $< $^ $*、
-//   明示ルールとパターンルール（%）、.PHONY、.SECONDARY、レシピの @ と -、行末の \ による継続
+//   明示ルールとパターンルール（%。ターゲットが複数なら 1 回のレシピで全部できる）、.PHONY、.SECONDARY、
+//   レシピの @ と -、行末の \ による継続、MAKEFLAGS の -j（並列実行）
 // ファイルの読み書きとコマンドの実行は、呼び出し側（worker.mjs）から渡す。
 
 class MakeError extends Error {}
@@ -243,67 +244,95 @@ export async function make({ makefile, goals = [], fs, exec, echo, error }) {
     return result;
   }
 
-  // 無い中間ファイル（.SECONDARY）は、ターゲットがその元より新しければ作らない
+  // 無い中間ファイル（.SECONDARY）は、ターゲットがその元より新しければ作らない。
+  // 元は、その先の前提までたどる（途中にあるファイルが古ければ、その先の新しいソースで判断する）
   function newestSource(target, depth = 0) {
     const t = fs.mtime(target);
-    if (t !== undefined) return t;
     const p = plan(target);
-    if (!p || depth > 20) return Infinity;
-    return Math.max(-Infinity, ...p.prereqs.map((q) => newestSource(q, depth + 1)));
+    if (!p || depth > 20) return t ?? Infinity;
+    return Math.max(t ?? -Infinity, ...p.prereqs.map((q) => newestSource(q, depth + 1)));
   }
 
-  const done = new Map(); // target -> 作り直したか
+  const done = new Map(); // target -> Promise<作り直したか>
+  const groupRuns = new Map(); // 複数ターゲットのパターンルールの実行（ルールと % の部分ごとに 1 回）
   let didSomething = false;
 
-  async function update(target, parent) {
-    if (done.has(target)) return done.get(target);
+  // 並列実行の数（Makefile の MAKEFLAGS の -j）。レシピの実行をこの数までに抑える
+  const makeflags = expand('$(MAKEFLAGS)', mk.vars, {});
+  const jobs = Math.max(1, Number(makeflags.match(/(?:^|\s)-j\s*(\d+)/)?.[1] ?? 1));
+  let running = 0;
+  const waiting = [];
+  const acquire = () => (running < jobs ? (running++, Promise.resolve()) : new Promise((r) => waiting.push(r)));
+  const release = () => (waiting.length ? waiting.shift()() : running--);
+
+  // 前提を並列に作る。どれかが失敗しても、走っているものが終わるまで待つ
+  async function updateAll(prereqs, target) {
+    const results = await Promise.allSettled(prereqs.map((q) => update(q, target)));
+    const failed = results.find((r) => r.status === 'rejected');
+    if (failed) throw failed.reason;
+    return results.some((r) => r.value);
+  }
+
+  function update(target, parent) {
+    if (!done.has(target)) done.set(target, build(target, parent));
+    return done.get(target);
+  }
+
+  async function build(target, parent) {
     const p = plan(target);
     if (!p) {
-      if (fs.mtime(target) !== undefined) {
-        done.set(target, false);
-        return false;
-      }
+      if (fs.mtime(target) !== undefined) return false;
       throw new MakeError(parent ? `*** No rule to make target '${target}', needed by '${parent}'.  Stop.` : `*** No rule to make target '${target}'.  Stop.`);
     }
     const mine = fs.mtime(target);
-    let rebuiltPrereq = false;
-    for (const q of p.prereqs) {
+    const prereqs = p.prereqs.filter((q) => {
       const intermediate = !explicitTargets.has(q) && !goals.includes(q);
-      if (fs.mtime(q) === undefined && intermediate && isSecondary(q) && mine !== undefined && newestSource(q) <= mine) continue;
-      if (await update(q, target)) rebuiltPrereq = true;
-    }
+      return !(fs.mtime(q) === undefined && intermediate && isSecondary(q) && mine !== undefined && newestSource(q) <= mine);
+    });
+    const rebuiltPrereq = await updateAll(prereqs, target);
     const needs =
       mk.phony.has(target) ||
       mine === undefined ||
       rebuiltPrereq ||
       p.prereqs.some((q) => (fs.mtime(q) ?? -Infinity) > mine);
-    if (!needs || !p.recipeRule || p.recipeRule.recipe.length === 0) {
-      done.set(target, needs && !p.recipeRule ? rebuiltPrereq : false);
-      return done.get(target);
+    if (!needs || !p.recipeRule || p.recipeRule.recipe.length === 0) return needs && !p.recipeRule ? rebuiltPrereq : false;
+    // ターゲットが複数のパターンルールは、1 回のレシピで全てのターゲットを作る（GNU make と同じ）
+    if (p.viaPattern && p.recipeRule.targets.length > 1) {
+      const key = `${p.recipeRule.line}\0${p.stem}`;
+      if (!groupRuns.has(key)) groupRuns.set(key, runRecipe(target, p));
+      return groupRuns.get(key);
     }
+    return runRecipe(target, p);
+  }
+
+  async function runRecipe(target, p) {
     const auto = { '@': target, '<': p.prereqs[0] ?? '', '^': [...new Set(p.prereqs)].join(' '), '*': p.stem };
-    for (const { text, line } of p.recipeRule.recipe) {
-      let cmd = expand(text, mk.vars, auto).trim();
-      let silent = false;
-      let ignore = false;
-      while (/^[@+-]/.test(cmd)) {
-        if (cmd[0] === '@') silent = true;
-        if (cmd[0] === '-') ignore = true;
-        cmd = cmd.slice(1).trimStart();
-      }
-      if (!cmd) continue;
-      if (!silent) echo(cmd);
-      didSomething = true;
-      const code = await exec(shellSplit(cmd));
-      if (code !== 0) {
-        if (ignore) {
-          error(`make: [${mk.name}:${line}: ${target}] Error ${code} (ignored)`);
-          continue;
+    await acquire();
+    try {
+      for (const { text, line } of p.recipeRule.recipe) {
+        let cmd = expand(text, mk.vars, auto).trim();
+        let silent = false;
+        let ignore = false;
+        while (/^[@+-]/.test(cmd)) {
+          if (cmd[0] === '@') silent = true;
+          if (cmd[0] === '-') ignore = true;
+          cmd = cmd.slice(1).trimStart();
         }
-        throw new MakeError(`*** [${mk.name}:${line}: ${target}] Error ${code}`);
+        if (!cmd) continue;
+        if (!silent) echo(cmd);
+        didSomething = true;
+        const code = await exec(shellSplit(cmd));
+        if (code !== 0) {
+          if (ignore) {
+            error(`make: [${mk.name}:${line}: ${target}] Error ${code} (ignored)`);
+            continue;
+          }
+          throw new MakeError(`*** [${mk.name}:${line}: ${target}] Error ${code}`);
+        }
       }
+    } finally {
+      release();
     }
-    done.set(target, true);
     return true;
   }
 

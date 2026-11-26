@@ -1,0 +1,31 @@
+--- a/llvm/tools/llvm-split/llvm-split.cpp
++++ b/llvm/tools/llvm-split/llvm-split.cpp
+@@ -95,6 +95,13 @@
+                           "one output module per kernel")),
+     cl::cat(SplitCategory));
+ 
++// cruby-in-browser: 分けたものを別々の共有ライブラリにできるよう、外に出したシンボルを hidden にしない
++static cl::opt<bool> DefaultVisibility(
++    "default-visibility",
++    cl::desc("Give hidden symbols default visibility in each output, so that "
++             "the outputs can be linked as separate shared libraries"),
++    cl::cat(SplitCategory));
++
+ static cl::opt<bool> OutputAssembly{
+     "S", cl::desc("Write output as LLVM assembly"), cl::cat(SplitCategory)};
+ 
+@@ -284,6 +291,14 @@
+       exit(1);
+     }
+ 
++    if (DefaultVisibility)
++      for (GlobalValue &GV : MPart->global_values())
++        if (GV.hasHiddenVisibility() && !GV.hasLocalLinkage())
++        {
++          GV.setVisibility(GlobalValue::DefaultVisibility);
++          GV.setDSOLocal(false);
++        }
++
+     WriteBitcodeToFile(*MPart, Out->os());
+ 
+     // Declare success.

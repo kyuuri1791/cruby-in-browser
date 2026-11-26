@@ -8,6 +8,7 @@ const KIND: Record<FileInfo["kind"], string> = {
   shared: "WebAssembly 共有ライブラリ",
   object: "オブジェクトファイル",
   module: "WebAssembly モジュール",
+  bitcode: "LLVM bitcode",
 };
 
 /** バイナリのファイルはテキストでは開かず、種類と大きさだけを出す */

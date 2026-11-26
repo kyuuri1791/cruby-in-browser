@@ -21,10 +21,10 @@ export type RunRequest = {
 
 export type RunStatus = "done" | "make-failed" | "error" | "timeout";
 
-export type FileInfo = { size: number; kind: "pie" | "shared" | "object" | "module" };
+export type FileInfo = { size: number; kind: "pie" | "shared" | "object" | "module" | "bitcode" };
 
 // public/cruby/worker.mjs とのやり取りの形を変えたら上げる（古い Worker がブラウザのキャッシュに残らないように）
-const WORKER_VERSION = 19;
+const WORKER_VERSION = 24;
 
 /** ./ruby の実行の時間制限 */
 export const RUN_TIME_LIMIT_MS = 10_000;

@@ -31,7 +31,8 @@
    make -j8 WASMOPT=: ruby
    ```
 6. `make install DESTDIR=$PWD/../rubyroot WASMOPT=:` で標準ライブラリを入れる。次に `rubyroot/usr/local/lib/ruby/gems/<ver>/` の同梱 gem を消す。最後に rspec を入れる（`spike/baseruby/bin/gem install rspec --install-dir <そこ> --no-document`）
-7. `npm run ruby:prepare`（約 3 分。本体の asyncify に時間がかかる）
+7. `sh ruby-build/llvm-split/build.sh` で、WASI 向けの `llvm-split` をビルドする（約 15 分。LLVM の一部をビルドする）
+8. `npm run ruby:prepare`（約 3 分。本体の asyncify に時間がかかる）
 
 編集できるファイルの一覧とコンパイルのフラグは `config.mjs` にあります。ここを変えたら 5 をやり直します。
 
@@ -40,7 +41,13 @@
 - 本体（`ruby.wasm`）は、拡張を静的リンクした ruby から、編集できるファイルを抜いたもの。`-pie --export-all --unresolved-symbols=import-dynamic` でリンクし、asyncify してある。
 - 編集できるファイルは `.o` にしてから、まとめて 1 つの共有ライブラリ `libruby-edit.so`（`-shared` のサイドモジュール）にする。実行時に `public/cruby/dylink.mjs` でリンクする。
 - `libruby-edit.so` の asyncify は最適化なし。`-O1` をかけるとリンクが約 10 倍遅くなり、実行速度はほぼ変わらない。
-- VM（`vm.c`）だけは別の `libruby-vm.so` にして、asyncify に `-O1` をかける。最適化しないと Ruby の実行全体が約 1.6 倍遅くなり、rspec がスタックあふれで落ちる。
-- `vm_eval.c`・`vm_method.c` は `vm.c` に `#include` されるので、単独ではコンパイルしない（`config.mjs` の `includedBy`）。書き換えると `out/vm.o` を作り直す。
+- VM（`vm.c`）だけは別の共有ライブラリにして、asyncify に `-O1` をかける。最適化しないと Ruby の実行全体が約 1.6 倍遅くなり、rspec がスタックあふれで落ちる。
+- `vm_eval.c`・`vm_method.c`・`vm_insnhelper.c`・`build/vm.inc` は `vm.c` に `#include` される。単独ではコンパイルしない（`config.mjs` の `includedBy`）。
+- `vm.c` は大きな 1 ファイルなので、並列にビルドする（`config.mjs` の `split`）。
+  - 最適化まで済ませた bitcode（`out/vm.bc`）を `llvm-split` で 4 つに分ける。
+  - それぞれを機械語にして、別々の共有ライブラリ `libruby-vm.0.so` 〜 `libruby-vm.3.so` にする。asyncify も 4 つ同時にかける。
+  - Makefile の `MAKEFLAGS += -j4` で、`make.mjs` がレシピを同時に 4 つまで実行する。clang と wasm-opt は別々の Worker（`public/cruby/tool-worker.mjs`）で動く。
+- `llvm-split` は YoWASP の LLVM を WASI 向けにビルドしたもの（`llvm-split/build.sh`）。
+  - 分けたものを別々の共有ライブラリにするため、`--default-visibility` を足してある（`llvm-split/default-visibility.patch`）。外に出したシンボルを hidden にしない。
 - ブラウザでの再ビルドは、`public/cruby/assets/Makefile`（`makefile.mjs` が作る）を `public/cruby/make.mjs`（小さな make）が読んで行う。配信する `.o` と `libruby-edit.so` も、`prepare.mjs` が同じ Makefile を同じ make・clang（YoWASP）・Binaryen.js で実行して作っている。
 - asyncify の状態変数（`__asyncify_state` と `__asyncify_data`）は、全モジュールで `asyncify-import-globals` にしてローダーが共有する。binaryen.js の `setPassArgument` に空文字を渡すと未設定扱いになるので `'1'` を渡す。

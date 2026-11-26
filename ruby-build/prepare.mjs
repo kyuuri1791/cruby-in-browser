@@ -7,7 +7,8 @@
 // 出力: public/cruby/assets/
 //   ruby.wasm              … 編集対象ファイルを抜いた本体（拡張を静的リンク。asyncify 済み）
 //   rubyfs.tar             … 標準ライブラリと rspec（/usr/local/lib/ruby 以下）
-//   obj/<name>.o           … 編集対象ファイルの .o（Makefile のレシピで作ったもの）
+//   obj/<name>.o           … 編集対象ファイルの .o（Makefile のレシピで作ったもの。分割するものは <name>.bc）
+//   llvm-split.wasm        … WASI 向けにビルドした llvm-split（ruby-build/llvm-split/build.sh）
 //   libruby-edit.so など   … それをまとめた共有ライブラリ（asyncify 済み。config.mjs の EDIT_LIBS）
 //   lib/<lib>.so           … libc など（asyncify 済み）
 //   src/<label>            … 編集対象ファイルの元のソース（array.c、vm.inc など）
@@ -20,7 +21,8 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync, rmSync } 
 import { gzipSync } from 'node:zlib';
 import { execFileSync, execSync } from 'node:child_process';
 import path from 'node:path';
-import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, LIBS, srcPath } from './config.mjs';
+import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, LIBS, srcPath, firstOutput, libFiles } from './config.mjs';
+import * as wasi from '@bjorn3/browser_wasi_shim';
 import { makefile } from './makefile.mjs';
 import { runClang } from '@yowasp/clang';
 import { make } from '../public/cruby/make.mjs';
@@ -102,7 +104,10 @@ writeFileSync(`${OUT}/Makefile`, mk);
   let clock = 1;
   for (const [p, text] of Object.entries(headers)) fs.set(p, { mtime: 0, data: text });
   for (const e of EDITABLE) fs.set(srcPath(e), { mtime: 1, data: readFileSync(`${OUT}/src/${e.label}`, 'utf8') });
-  const commands = createCommands({ runClang, binaryen, fs, now: () => ++clock, isHeader: headerFilter(depsOf) });
+  const LLVM_SPLIT = process.env.LLVM_SPLIT ?? path.join(WORK, 'llvm-wasm/wasm-build/bin/llvm-split');
+  writeFileSync(`${OUT}/llvm-split.wasm`, readFileSync(LLVM_SPLIT));
+  const tool = WebAssembly.compile(readFileSync(LLVM_SPLIT));
+  const commands = createCommands({ runClang, binaryen, fs, now: () => ++clock, isHeader: headerFilter(depsOf), wasi, loadTool: () => tool });
   const ok = await make({
     makefile: mk,
     fs: { mtime: (p) => fs.get(p)?.mtime },
@@ -111,10 +116,10 @@ writeFileSync(`${OUT}/Makefile`, mk);
     exec: (argv) => (commands[argv[0]] ? commands[argv[0]](argv, { stdout: console.error, stderr: console.error }) : 127),
   });
   if (!ok) throw new Error('make に失敗しました');
-  for (const { name } of COMPILED) writeFileSync(`${OUT}/obj/${name}.o`, fs.get(`out/${name}.o`).data);
-  for (const { name } of EDIT_LIBS) writeFileSync(`${OUT}/${name}`, fs.get(`out/${name}`).data);
+  for (const e of COMPILED) writeFileSync(`${OUT}/obj/${firstOutput(e).split('/').at(-1)}`, fs.get(firstOutput(e)).data);
+  for (const name of EDIT_LIBS.flatMap(libFiles)) writeFileSync(`${OUT}/${name}`, fs.get(`out/${name}`).data);
 }
-lap(`${EDIT_LIBS.map((l) => l.name).join('・')} と .o`);
+lap(`${EDIT_LIBS.flatMap(libFiles).join('・')} と .o`);
 
 // 3. 標準ライブラリと rspec（$CRUBY_WORK/rubyroot に make install と gem install rspec をしたもの）を 1 つの tar に
 {
@@ -127,11 +132,13 @@ lap(`${EDIT_LIBS.map((l) => l.name).join('・')} と .o`);
 // 3. マニフェスト（ブラウザが読む一覧）
 writeFileSync(`${OUT}/manifest.json`, JSON.stringify({
   editable: EDITABLE,
-  editLibs: EDIT_LIBS.map(({ name }) => ({ name })),
+  editLibs: EDIT_LIBS.flatMap(libFiles).map((name) => ({ name })),
+  // 配信する make の途中の成果物（out/ に置く。中身は obj/ にある）
+  prebuilt: COMPILED.map(firstOutput),
   libs: LIBS,
 }, null, 2));
 // 4. 大きなファイルは gzip にする（ブラウザでは public/cruby/gz-fetch.mjs が展開する）
-for (const f of ['ruby.wasm', 'rubyfs.tar', 'headers.json', ...EDIT_LIBS.map((l) => l.name), ...LIBS.map((l) => `lib/${l}`)]) {
+for (const f of ['ruby.wasm', 'rubyfs.tar', 'headers.json', 'llvm-split.wasm', ...EDIT_LIBS.flatMap(libFiles), ...LIBS.map((l) => `lib/${l}`)]) {
   const p = `${OUT}/${f}`;
   if (!existsSync(p)) continue;
   writeFileSync(`${p}.gz`, gzipSync(readFileSync(p), { level: 9 }));

@@ -1,7 +1,8 @@
-// Makefile のレシピから呼ばれるコマンド（clang と wasm-opt）。
+// Makefile のレシピから呼ばれるコマンド（clang、llvm-split、wasm-opt）。
 // ブラウザの Worker（worker.mjs）と、配信する素材を作る ruby-build/prepare.mjs の両方で使う。
-//   clang     … YoWASP Clang（LLVM を WebAssembly にしたもの）
-//   wasm-opt  … Binaryen.js（wasm-opt と同じ Binaryen を JavaScript から使う）
+//   clang       … YoWASP Clang（LLVM を WebAssembly にしたもの）
+//   llvm-split  … LLVM の llvm-split を WASI 向けにビルドしたもの（ruby-build/llvm-split/）。WASI は browser_wasi_shim
+//   wasm-opt    … Binaryen.js（wasm-opt と同じ Binaryen を JavaScript から使う）
 //
 // fs は仮想ファイルシステム: Map<path, { mtime, data?: Uint8Array | string, load?: () => Promise }>
 
@@ -23,6 +24,9 @@ export async function readFile(fs, path) {
  *   fs       … 仮想ファイルシステム
  *   now      … 次の更新時刻を返す関数
  *   isHeader … コンパイラに見せるファイル（ヘッダ）かどうか。(path, argv) で呼ぶ
+ *   wasi     … browser_wasi_shim のモジュール（llvm-split を動かす）
+ *   loadTool … ツールの wasm の WebAssembly.Module を返す関数（loadTool('llvm-split')）
+ *   runWasmOpt … 省略可。(argv, data) => Promise<{ code, data, error }>。別の Worker で wasm-opt を動かすときに渡す
  */
 /**
  * コンパイラに見せるファイルを選ぶ関数を作る。deps はソースごとの依存ファイル（headers.json の deps）。
@@ -38,7 +42,53 @@ export function headerFilter(deps) {
   };
 }
 
-export function createCommands({ runClang, binaryen, fs, now, isHeader }) {
+/**
+ * wasm-opt と同じ引数で、Binaryen.js でバイト列を変換する（ファイルを読み書きしない）。
+ * -O は全てのパスに効く（無ければ最適化レベル 0）。-O を書いた位置で最適化のパスも走らせる。
+ * 返り値: { code, data?, error? }
+ */
+export function optimizeWasm(binaryen, argv, data) {
+  let input;
+  let debug = false;
+  let level = [0, 0];
+  const steps = []; // ['pass', name] | ['opt', [level, shrink]]
+  const passArgs = [];
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '-o') i++;
+    else if (a === '-g' || a === '--debuginfo') debug = true;
+    else if (a in OPT) {
+      level = OPT[a];
+      steps.push(['opt', OPT[a]]);
+    } else if (a.startsWith('--pass-arg=')) {
+      const [k, v] = a.slice('--pass-arg='.length).split('@');
+      passArgs.push([k, v ?? '1']); // Binaryen.js では空文字が「未設定」扱いになるので 1 にする
+    } else if (/^--[a-z0-9-]+$/.test(a)) steps.push(['pass', a.slice(2)]);
+    else if (!a.startsWith('-')) input = a;
+    else return { code: 1, error: `wasm-opt: unknown option '${a}'` };
+  }
+  if (!input) return { code: 1, error: 'wasm-opt: no input file' };
+  let mod;
+  try {
+    mod = binaryen.readBinary(data);
+    binaryen.setDebugInfo(debug);
+    binaryen.setOptimizeLevel(level[0]);
+    binaryen.setShrinkLevel(level[1]);
+    for (const [k, v] of passArgs) binaryen.setPassArgument(k, v);
+    for (const [kind, x] of steps) {
+      if (kind === 'pass') mod.runPasses([x]);
+      else mod.optimize();
+    }
+    return { code: 0, data: mod.emitBinary() };
+  } catch (e) {
+    return { code: 1, error: `wasm-opt: ${e?.message ?? e}` };
+  } finally {
+    mod?.dispose();
+    binaryen.clearPassArguments();
+  }
+}
+
+export function createCommands({ runClang, binaryen, runWasmOpt, fs, now, isHeader, wasi, loadTool }) {
   async function clang(argv, out) {
     // コンパイラに見せるファイル: ヘッダと、引数に出てくるファイル
     const tree = {};
@@ -78,61 +128,56 @@ export function createCommands({ runClang, binaryen, fs, now, isHeader }) {
   }
 
   async function wasmOpt(argv, out) {
-    // wasm-opt と同じく、-O は全てのパスに効く（無ければ最適化レベル 0）。-O を書いた位置で最適化のパスも走らせる
-    let input;
-    let output;
-    let debug = false;
-    let level = [0, 0];
-    const steps = []; // ['pass', name] | ['opt', [level, shrink]]
-    const passArgs = [];
-    for (let i = 1; i < argv.length; i++) {
-      const a = argv[i];
-      if (a === '-o') output = argv[++i];
-      else if (a === '-g' || a === '--debuginfo') debug = true;
-      else if (a in OPT) {
-        level = OPT[a];
-        steps.push(['opt', OPT[a]]);
-      } else if (a.startsWith('--pass-arg=')) {
-        const [k, v] = a.slice('--pass-arg='.length).split('@');
-        passArgs.push([k, v ?? '1']); // Binaryen.js では空文字が「未設定」扱いになるので 1 にする
-      } else if (/^--[a-z0-9-]+$/.test(a)) steps.push(['pass', a.slice(2)]);
-      else if (!a.startsWith('-')) input = a;
-      else {
-        out.stderr(`wasm-opt: unknown option '${a}'`);
-        return 1;
-      }
-    }
-    if (!input) {
-      out.stderr('wasm-opt: no input file');
-      return 1;
-    }
-    const data = await readFile(fs, input);
-    if (!(data instanceof Uint8Array)) {
+    const input = argv.slice(1).find((a, i, all) => !a.startsWith('-') && all[i - 1] !== '-o');
+    const oi = argv.indexOf('-o');
+    const output = oi >= 0 ? argv[oi + 1] : undefined;
+    const data = input ? await readFile(fs, input) : undefined;
+    if (input && !(data instanceof Uint8Array)) {
       out.stderr(`wasm-opt: ${input}: No such file or directory`);
       return 1;
     }
-    let mod;
-    try {
-      mod = binaryen.readBinary(data);
-      binaryen.setDebugInfo(debug);
-      binaryen.setOptimizeLevel(level[0]);
-      binaryen.setShrinkLevel(level[1]);
-      for (const [k, v] of passArgs) binaryen.setPassArgument(k, v);
-      for (const [kind, x] of steps) {
-        if (kind === 'pass') mod.runPasses([x]);
-        else mod.optimize();
-      }
-      const result = mod.emitBinary();
-      if (output) fs.set(output, { mtime: now(), data: result });
-      return 0;
-    } catch (e) {
-      out.stderr(`wasm-opt: ${e?.message ?? e}`);
-      return 1;
-    } finally {
-      mod?.dispose();
-      binaryen.clearPassArguments();
-    }
+    const r = await (runWasmOpt ?? ((a, d) => optimizeWasm(binaryen, a, d)))(argv, data);
+    if (r.error) out.stderr(r.error);
+    if (r.code === 0 && output) fs.set(output, { mtime: now(), data: r.data });
+    return r.code;
   }
 
-  return { clang, 'wasm-opt': wasmOpt };
+  /** llvm-split（引数のファイルを渡し、-o の接頭辞で始まるファイルを受け取る） */
+  async function llvmSplit(argv, out) {
+    const { WASI, OpenFile, File, Directory, PreopenDirectory, ConsoleStdout } = wasi;
+    const root = new Map();
+    const dirOf = (rel) => {
+      let d = root;
+      for (const p of rel.split('/').slice(0, -1)) {
+        if (!d.has(p)) d.set(p, new Directory(new Map()));
+        d = d.get(p).contents;
+      }
+      return d;
+    };
+    const oi = argv.indexOf('-o');
+    const prefix = oi >= 0 ? argv[oi + 1] : 'split';
+    dirOf(prefix);
+    for (const a of argv.slice(1)) if (!a.startsWith('-') && fs.has(a)) dirOf(a).set(a.split('/').at(-1), new File(await readFile(fs, a)));
+    const w = new WASI(argv, [], [
+      new OpenFile(new File([])),
+      ConsoleStdout.lineBuffered(out.stdout),
+      ConsoleStdout.lineBuffered(out.stderr),
+      new PreopenDirectory('/', root),
+    ]);
+    let code;
+    try {
+      const inst = await WebAssembly.instantiate(await loadTool('llvm-split'), { wasi_snapshot_preview1: w.wasiImport });
+      code = w.start(inst);
+    } catch (e) {
+      out.stderr(`llvm-split: ${e?.message ?? e}`);
+      return 1;
+    }
+    const base = prefix.split('/').at(-1);
+    for (const [name, f] of dirOf(prefix)) {
+      if (name.startsWith(base) && f instanceof File) fs.set(prefix.slice(0, prefix.length - base.length) + name, { mtime: now(), data: f.data });
+    }
+    return code;
+  }
+
+  return { clang, 'llvm-split': llvmSplit, 'wasm-opt': wasmOpt };
 }

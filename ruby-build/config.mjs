@@ -52,10 +52,21 @@ export const LIBS = ['libc.so', 'libwasi-emulated-mman.so', 'libwasi-emulated-si
 // 編集できるファイルをまとめる共有ライブラリ。optimize は asyncify のあとに -O1 をかけるか
 //   libruby-edit.so … 最適化なし（-O1 をかけるとリンクが数倍遅くなり、実行速度はほぼ変わらない）
 //   libruby-vm.so   … 最適化あり（VM は最適化しないと実行全体が約 1.6 倍遅くなり、rspec がスタックあふれで落ちる）
+// split は、ソースを最適化済みの bitcode にしてから llvm-split で分ける数。分けたものは別々の共有ライブラリ
+// （libruby-vm.0.so …）にして、機械語の生成と asyncify を並列に行う。
+// vm.c は vm_insnhelper.c なども #include した大きな 1 ファイルで、コンパイルの半分以上が機械語の生成のため。
 export const EDIT_LIBS = [
   { name: 'libruby-edit.so', optimize: false },
-  { name: 'libruby-vm.so', optimize: true },
+  { name: 'libruby-vm.so', optimize: true, split: 4 },
 ];
+/** make の並列実行の数（Makefile の MAKEFLAGS） */
+export const JOBS = 4;
 export const libOf = (e) => e.lib ?? EDIT_LIBS[0].name;
+/** 共有ライブラリのファイル名（分けるなら libruby-vm.0.so …） */
+export const libFiles = (l) => (l.split ? Array.from({ length: l.split }, (_, i) => l.name.replace(/\.so$/, `.${i}.so`)) : [l.name]);
+/** そのソースを分割してコンパイルする数（分割しないなら 0） */
+export const splitOf = (e) => EDIT_LIBS.find((l) => l.name === libOf(e))?.split ?? 0;
+/** ソースから make が作るもの（分割するなら bitcode、しないなら .o）。配信もこれを obj/ に置く */
+export const firstOutput = (e) => (splitOf(e) ? `out/${e.name}.bc` : `out/${e.name}.o`);
 /** 単独でコンパイルするファイル（.o を作るもの） */
 export const COMPILED = EDITABLE.filter((e) => !e.includedBy);

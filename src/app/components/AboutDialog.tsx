@@ -10,6 +10,7 @@ const CRUBY_REVISION = "a28ce4f87653cc29eb67ec31f7dfdaadcf3436a3";
 const components = [
   { name: "Ruby（CRuby）", what: "Ruby 本体と C のソース", license: "Ruby License または BSD-2-Clause", files: [["COPYING", "/licenses/ruby-COPYING.txt"], ["BSDL", "/licenses/ruby-BSDL.txt"], ["LEGAL", "/licenses/ruby-LEGAL.txt"]], url: "https://github.com/ruby/ruby" },
   { name: "YoWASP Clang/LLD（LLVM）", what: "clang・wasm-ld・wasi-libc", license: "ISC、Apache-2.0 with LLVM Exceptions（LLVM）、wasi-libc は各ファイルのライセンス", files: [], url: "https://github.com/YoWASP/clang" },
+  { name: "LLVM（llvm-split）", what: "llvm-split（YoWASP の LLVM を WASI 向けにビルドし、--default-visibility を足したもの）", license: "Apache-2.0 with LLVM Exceptions", files: [], url: "https://github.com/YoWASP/llvm-project" },
   { name: "Binaryen", what: "wasm-opt（asyncify）", license: "Apache-2.0", files: [["LICENSE", "/licenses/binaryen-LICENSE.txt"]], url: "https://github.com/WebAssembly/binaryen" },
   { name: "browser_wasi_shim", what: "WASI", license: "MIT または Apache-2.0", files: [["LICENSE-MIT", "/licenses/browser_wasi_shim-LICENSE-MIT.txt"]], url: "https://github.com/bjorn3/browser_wasi_shim" },
   { name: "CodeMirror", what: "コードエディタ", license: "MIT", files: [["LICENSE", "/licenses/codemirror-LICENSE.txt"]], url: "https://codemirror.net/" },
@@ -43,8 +44,9 @@ export default function AboutDialog() {
           <ul>
             <li>Ruby 本体は stringio・ripper などの拡張を静的リンクし、編集できる C のファイルを除いて WebAssembly（PIE）にビルドしてある。</li>
             <li>make は、GNU make の一部を JavaScript で書き直したもの。エクスプローラーの Makefile をそのまま読んで実行する。</li>
-            <li>clang は YoWASP Clang、wasm-opt は Binaryen.js で、どちらもブラウザの中で動く。</li>
-            <li>編集できるファイルは <code>libruby-edit.so</code> と、VM だけの <code>libruby-vm.so</code> にまとめ、<code>./ruby</code> の起動時に動的リンクする。VM は最適化しないと Ruby の実行全体が遅くなるので、こちらだけ最適化をかけている。</li>
+            <li>clang は YoWASP Clang、wasm-opt は Binaryen.js で、どちらもブラウザの中で動く。同時に動かせるよう、それぞれ別の Web Worker で実行する。</li>
+            <li>編集できるファイルは <code>libruby-edit.so</code> と、VM の <code>libruby-vm.0.so</code> 〜 <code>libruby-vm.3.so</code> にまとめ、<code>./ruby</code> の起動時に動的リンクする。VM は最適化しないと Ruby の実行全体が遅くなるので、こちらだけ最適化をかけている。</li>
+            <li>VM の <code>vm.c</code> は大きな 1 ファイルなので、bitcode にしてから <code>llvm-split</code>（WASI 向けにビルドしたもの）で 4 つに分け、<code>make -j4</code> で並列にビルドする。</li>
             <li>標準ライブラリは <code>make install</code>、rspec は <code>gem install</code> したものをそのまま使う。</li>
           </ul>
           <h2>使っているソフトウェアとライセンス</h2>
