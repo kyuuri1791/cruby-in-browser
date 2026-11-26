@@ -1,6 +1,7 @@
 // ブラウザで編集・再ビルドできる Ruby のソースファイル
 //   lib        … まとめる共有ライブラリ（省略時は EDIT_LIBS の先頭）
 //   includedBy … 単独ではコンパイルせず、そのファイルに #include されるもの
+//   dir        … ブラウザの中で置くフォルダ（省略時は ruby。build は Ruby のビルドで生成されたファイル）
 export const EDITABLE = [
   { name: 'version', label: 'version.c' },
   { name: 'array', label: 'array.c' },
@@ -18,7 +19,11 @@ export const EDITABLE = [
   { name: 'vm_eval', label: 'vm_eval.c', includedBy: 'vm' },
   { name: 'vm_method', label: 'vm_method.c', includedBy: 'vm' },
   { name: 'vm_insnhelper', label: 'vm_insnhelper.c', includedBy: 'vm' },
+  // 命令の本体。insns.def から生成されたものを vm_exec.c が #include している（命令の追加はできない）
+  { name: 'vm_inc', label: 'vm.inc', dir: 'build', includedBy: 'vm' },
 ];
+/** ブラウザの中のパス（ruby/array.c、build/vm.inc） */
+export const srcPath = (e) => `${e.dir ?? 'ruby'}/${e.label}`;
 
 // Ruby の configure が選ぶ warnflags と同じもの
 const WARN_FLAGS = [

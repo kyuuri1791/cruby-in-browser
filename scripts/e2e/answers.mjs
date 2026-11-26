@@ -1,11 +1,12 @@
 // 各課題の解答例を当てはめて、spec が全部通ることを確かめる
-//   node scripts/e2e/answers.mjs [http://127.0.0.1:3123]
+//   node scripts/e2e/answers.mjs [http://127.0.0.1:3123] [slug...]   slug を渡すとその課題だけ
 import { launch, answers } from './helpers.mjs';
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:3123';
+const only = process.argv.slice(3);
 const h = await launch(BASE);
 let fails = 0;
-for (const [slug, files] of Object.entries(answers)) {
+for (const [slug, files] of Object.entries(answers).filter(([s]) => !only.length || only.includes(s))) {
   await h.page.goto(`${BASE}/?lesson=${slug}`);
   await h.waitEditor();
   for (const [label, text] of Object.entries(files)) {

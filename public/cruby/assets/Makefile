@@ -29,7 +29,7 @@ out/libruby-vm.so: $(VM_OBJS)
 	$(CC) $(LDFLAGS) $^ -o $@
 	$(WASMOPT) -O1 $(WASMOPTFLAGS) $@ -o $@
 
-out/vm.o: ruby/vm_eval.c ruby/vm_method.c ruby/vm_insnhelper.c
+out/vm.o: ruby/vm_eval.c ruby/vm_method.c ruby/vm_insnhelper.c build/vm.inc
 
 out/%.o: ruby/%.c
 	$(CC) $(CFLAGS) $(INCFLAGS) -c $< -o $@

@@ -4,7 +4,7 @@ CRuby の C のソースを書き換え、ブラウザの中でビルドして�
 
 - エディタで `array.c` などを書き換え、`make` でビルドし、`./ruby main.rb` で実行する
 - 課題ごとに RSpec の spec があり、`bin/rspec spec/…` で確かめられる
-- 課題は Array や String へのメソッドの追加から、Proc、`define_method`、`method_missing` など VM の中までの 16 個
+- 課題は VM の命令（`build/vm.inc`）とメソッド呼び出しから、Array や String へのメソッドの追加、Proc、`define_method`、`method_missing` までの 20 個
 
 [Ruby Hack Challenge](https://github.com/ko1/rubyhackchallenge) に着想を得ています。教材の文章と課題は、このリポジトリで書いたものです。
 

@@ -1,0 +1,37 @@
+# 本番と同じ standalone のサーバーを立て、ヘッドレス Chrome で smoke と全課題の解答例を確かめる
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: standalone のサーバーを起動する
+        run: |
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/
+          (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 node server.js > /tmp/server.log 2>&1 &)
+          npx --yes wait-on@8 -t 60000 http://127.0.0.1:3000/
+      - name: smoke
+        run: node scripts/e2e/smoke.mjs http://127.0.0.1:3000
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - name: 全課題の解答例
+        run: node scripts/e2e/answers.mjs http://127.0.0.1:3000
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - if: failure()
+        run: tail -100 /tmp/server.log

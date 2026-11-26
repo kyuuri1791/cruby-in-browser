@@ -49,6 +49,13 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
 
   const prev = lessons[index - 1];
   const next = lessons[index + 1];
+  // 前後の章へのリンク（本文の上と下に置く）
+  const pager = (pos: "top" | "bottom") => (
+    <nav className={`lesson-nav lesson-nav-${pos}`} aria-label={pos === "top" ? "前後の章（上）" : "前後の章（下）"}>
+      {prev ? <button className="link" onClick={() => show(prev.slug, true)}>← {prev.title}</button> : <span />}
+      {next ? <button className="link" onClick={() => show(next.slug, true)}>{next.title} →</button> : <span />}
+    </nav>
+  );
 
   return (
     <LessonLayout
@@ -73,6 +80,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
           </nav>
           <div className="lesson-scroll" ref={textRef}>
             <article className="lesson-text" key={lesson.slug}>
+              {pager("top")}
               <h1>{lesson.title}</h1>
               {lesson.body && <LessonBody blocks={lesson.body} copyable />}
               {lesson.refs && (
@@ -105,10 +113,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
                   <LessonBody blocks={lesson.answer} />
                 </details>
               )}
-              <nav className="lesson-nav">
-                {prev ? <button className="link" onClick={() => show(prev.slug, true)}>← {prev.title}</button> : <span />}
-                {next ? <button className="link" onClick={() => show(next.slug, true)}>{next.title} →</button> : <span />}
-              </nav>
+              {pager("bottom")}
             </article>
           </div>
         </div>

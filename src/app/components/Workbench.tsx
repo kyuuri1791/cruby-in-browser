@@ -225,7 +225,7 @@ export default function Workbench({ current, specs, ref }: Props) {
   const labelOf = (name: string) =>
     name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").at(-1)! : (files.find((f) => f.name === name)?.label ?? `${name}.c`);
   const pathOf = (name: string) =>
-    name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").join(" › ") : `ruby › ${labelOf(name)}`;
+    name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").join(" › ") : `${files.find((f) => f.name === name)?.dir ?? "ruby"} › ${labelOf(name)}`;
   const icon = (name: string) =>
     name === MAKEFILE ? (
       <span className="file-icon mk-icon" aria-hidden="true">mk</span>
@@ -278,9 +278,10 @@ export default function Workbench({ current, specs, ref }: Props) {
         <ul className="wb-tree" role="tree">
           {/* VS Code と同じく、フォルダを名前順に先に並べる */}
           {folder("bin", [BIN_RSPEC])}
+          {files.some((f) => f.dir === "build") && folder("build", files.filter((f) => f.dir === "build").map((f) => f.name))}
           {libFiles.length > 0 && folder("lib", libFiles)}
           {outFiles.length > 0 && folder("out", outFiles)}
-          {folder("ruby", files.map((f) => f.name))}
+          {folder("ruby", files.filter((f) => !f.dir).map((f) => f.name))}
           {folder("spec", specFiles)}
           {rootFiles.map((name) => treeItem(name, 0))}
         </ul>

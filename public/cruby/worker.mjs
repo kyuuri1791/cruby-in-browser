@@ -114,8 +114,8 @@ function initVfs() {
     // 本体と libc など（ruby-build/prepare.mjs でビルドして配信しているもの）
     prebuilt('ruby', 'ruby.wasm');
     for (const l of manifest.libs) prebuilt(`lib/${l}`, `lib/${l}`);
-    for (const { name, includedBy } of manifest.editable) {
-      vfs.set(`ruby/${name}.c`, { mtime: 0, load: () => fetchOk(`src/${name}.c`).then((r) => r.text()) });
+    for (const { name, label, dir, includedBy } of manifest.editable) {
+      vfs.set(`${dir ?? 'ruby'}/${label}`, { mtime: 0, load: () => fetchOk(`src/${label}`).then((r) => r.text()) });
       // 配信済みの .o（ruby-build/prepare.mjs が、同じ Makefile・同じ clang で作ったもの）。#include される .c は .o を持たない
       if (!includedBy) prebuilt(`out/${name}.o`, `obj/${name}.o`);
     }
@@ -145,14 +145,14 @@ const readFile = (path) => readFileIn(vfs, path);
 
 /** 編集された C のファイルを仮想ファイルシステムに反映する。内容が変わったら更新時刻を進める */
 function syncSources(manifest, sources) {
-  for (const { name } of manifest.editable) {
+  for (const { name, label, dir } of manifest.editable) {
     const content = sources[name] ?? null;
     if (lastSource.has(name) && lastSource.get(name) === content) continue;
     const first = !lastSource.has(name);
     lastSource.set(name, content);
     if (first && content === null) continue;
-    const path = `ruby/${name}.c`;
-    vfs.set(path, content === null ? { mtime: now(), load: () => fetchOk(`src/${name}.c`).then((r) => r.text()) } : { mtime: now(), data: content });
+    const path = `${dir ?? 'ruby'}/${label}`;
+    vfs.set(path, content === null ? { mtime: now(), load: () => fetchOk(`src/${label}`).then((r) => r.text()) } : { mtime: now(), data: content });
   }
 }
 

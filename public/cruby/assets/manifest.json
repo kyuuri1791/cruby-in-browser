@@ -59,6 +59,12 @@
       "name": "vm_insnhelper",
       "label": "vm_insnhelper.c",
       "includedBy": "vm"
+    },
+    {
+      "name": "vm_inc",
+      "label": "vm.inc",
+      "dir": "build",
+      "includedBy": "vm"
     }
   ],
   "editLibs": [

@@ -2,7 +2,7 @@
 // 編集できる C のファイルを .o にして、共有ライブラリ（libruby-edit.so と、VM の libruby-vm.so）にまとめる。
 // asyncify の最適化は VM だけにかける（config.mjs の EDIT_LIBS）。
 // ここに書いたコマンドが、そのままブラウザの中で実行される（clang は YoWASP Clang、wasm-opt は Binaryen.js）。
-import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, libOf } from './config.mjs';
+import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, libOf, srcPath } from './config.mjs';
 import path from 'node:path';
 
 const wrap = (words, indent = '\t') => {
@@ -41,7 +41,7 @@ out/${l.name}: $(${varOf(l)})
 \t$(CC) $(LDFLAGS) $^ -o $@
 \t$(WASMOPT)${l.optimize ? " -O1" : ""} $(WASMOPTFLAGS) $@ -o $@
 `).join('')}
-${COMPILED.filter((c) => EDITABLE.some((e) => e.includedBy === c.name)).map((c) => `out/${c.name}.o: ${EDITABLE.filter((e) => e.includedBy === c.name).map((e) => `ruby/${e.name}.c`).join(' ')}\n`).join('')}
+${COMPILED.filter((c) => EDITABLE.some((e) => e.includedBy === c.name)).map((c) => `out/${c.name}.o: ${EDITABLE.filter((e) => e.includedBy === c.name).map(srcPath).join(' ')}\n`).join('')}
 out/%.o: ruby/%.c
 \t$(CC) $(CFLAGS) $(INCFLAGS) -c $< -o $@
 `;

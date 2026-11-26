@@ -3,9 +3,18 @@ import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'node:fs';
 
 export const src = (n) => readFileSync(new URL(`../../public/cruby/assets/src/${n}.c`, import.meta.url), 'utf8');
+const vmInc = () => readFileSync(new URL('../../public/cruby/assets/src/vm.inc', import.meta.url), 'utf8');
+/** vm.inc の命令 insn の本体の中だけで置き換える */
+const inInsn = (s, insn, from, to) => {
+  const start = s.indexOf(`INSN_ENTRY(${insn})\n`);
+  const end = s.indexOf('END_INSN(', start);
+  const i = s.indexOf(from, start);
+  if (start < 0 || i < 0 || i > end) throw new Error(`${insn} に見つからない: ${from}`);
+  return s.slice(0, i) + to + s.slice(i + from.length);
+};
 
 export async function launch(base, viewport = { width: 1440, height: 900 }) {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'], protocolTimeout: 600000, defaultViewport: viewport });
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? '/usr/bin/chromium', headless: true, args: ['--no-sandbox'], protocolTimeout: 600000, defaultViewport: viewport });
   await browser.defaultBrowserContext().overridePermissions(new URL(base).origin, ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
@@ -89,6 +98,47 @@ export const answers = {
     'proc.c': src('proc').replace('        body = rb_block_lambda();', '        body = rb_block_proc();').replace('            proc->header.is_lambda = TRUE;\n            proc->header.is_from_method = TRUE;', '            proc->header.is_from_method = TRUE;'),
     'vm_insnhelper.c': src('vm_insnhelper').replace('    if (vm_block_type(block) == block_type_iseq) {\n        CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);', '    if (vm_block_type(block) == block_type_iseq && proc->header.is_lambda) {\n        CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);'),
     'vm.c': src('vm').replace('return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, TRUE, NULL, me);', 'return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, proc->header.is_lambda, NULL, me);'),
+  },
+  putobject: {
+    'vm.inc': ['putobject', 'putobject_INT2FIX_0_', 'putobject_INT2FIX_1_'].reduce(
+      (v, insn) => inInsn(v, insn, '    TOPN(0) = val;\n', '    TOPN(0) = val;\n    if (!NIL_P(putobject_log)) rb_ary_push(putobject_log, val);\n'),
+      vmInc(),
+    ),
+    'vm.c': after(
+      src('vm').replace('#include "vm_exec.c"\n', 'static VALUE putobject_log = Qnil;\n\nstatic VALUE\nvm_putobjects(VALUE self)\n{\n    VALUE log = rb_ary_new();\n    putobject_log = log;\n    rb_yield(Qnil);\n    putobject_log = Qnil;\n    return log;\n}\n\n#include "vm_exec.c"\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_gc_register_address(&putobject_log);\n    rb_define_singleton_method(rb_cRubyVM, "putobjects", vm_putobjects, 0);',
+    ),
+  },
+  branch: {
+    'vm.inc': inInsn(
+      inInsn(vmInc(), 'branchif', '    if (RTEST(val)) {', '    if (RTEST(val) && !(falsy_zero && val == INT2FIX(0))) {'),
+      'branchunless', '    if (!RTEST(val)) {', '    if (!RTEST(val) || (falsy_zero && val == INT2FIX(0))) {',
+    ),
+    'vm.c': after(
+      src('vm').replace('#include "vm_exec.c"\n', 'static bool falsy_zero;\n\nstatic VALUE\nvm_set_falsy_zero(VALUE self, VALUE flag)\n{\n    falsy_zero = RTEST(flag);\n    return flag;\n}\n\n#include "vm_exec.c"\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "falsy_zero=", vm_set_falsy_zero, 1);',
+    ),
+  },
+  'outer-locals': {
+    'vm.inc': ['getlocal', 'getlocal_WC_1'].reduce(
+      (v, insn) => inInsn(v, insn, '    val = *(vm_get_ep(GET_EP(), level) - idx);\n', '    val = *(vm_get_ep(GET_EP(), level) - idx);\n    if (level > 0) outer_reads++;\n'),
+      vmInc(),
+    ),
+    'vm.c': after(
+      src('vm').replace('#include "vm_exec.c"\n', 'static unsigned long outer_reads;\n\nstatic VALUE\nvm_outer_reads(VALUE self)\n{\n    unsigned long before = outer_reads;\n    rb_yield(Qnil);\n    return ULONG2NUM(outer_reads - before);\n}\n\n#include "vm_exec.c"\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "outer_reads", vm_outer_reads, 0);',
+    ),
+  },
+  'cfunc-call': {
+    'vm_insnhelper.c': src('vm_insnhelper').replace('    val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);', '    if (!NIL_P(cfunc_log)) rb_ary_push(cfunc_log, ID2SYM(me->def->original_id));\n    val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);'),
+    'vm.c': after(
+      src('vm').replace('#include "vm_insnhelper.c"\n', 'static VALUE cfunc_log = Qnil;\n\n#include "vm_insnhelper.c"\n').replace('#include "vm_exec.c"\n', 'static VALUE\nvm_cfunc_calls(VALUE self)\n{\n    VALUE log = rb_ary_new();\n    cfunc_log = log;\n    rb_yield(Qnil);\n    cfunc_log = Qnil;\n    return log;\n}\n\n#include "vm_exec.c"\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_gc_register_address(&cfunc_log);\n    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);',
+    ),
   },
   'opt-plus': {
     'vm_insnhelper.c': src('vm_insnhelper')

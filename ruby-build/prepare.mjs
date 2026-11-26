@@ -10,7 +10,7 @@
 //   obj/<name>.o           … 編集対象ファイルの .o（Makefile のレシピで作ったもの）
 //   libruby-edit.so など   … それをまとめた共有ライブラリ（asyncify 済み。config.mjs の EDIT_LIBS）
 //   lib/<lib>.so           … libc など（asyncify 済み）
-//   src/<name>.c           … 編集対象ファイルの元のソース
+//   src/<label>            … 編集対象ファイルの元のソース（array.c、vm.inc など）
 //   headers.json           … ブラウザでコンパイルするときに必要なヘッダ（build/ と ruby/ に置く）と、ソースごとの依存の一覧
 //   Makefile               … ブラウザの中の make が読む Makefile（ruby-build/makefile.mjs が作る）
 //   manifest.json          … 編集できるファイルと共有ライブラリの一覧
@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync, rmSync } 
 import { gzipSync } from 'node:zlib';
 import { execFileSync, execSync } from 'node:child_process';
 import path from 'node:path';
-import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, LIBS } from './config.mjs';
+import { EDITABLE, EDIT_LIBS, COMPILED, COMPILE_FLAGS, INCLUDE_DIRS, LIBS, srcPath } from './config.mjs';
 import { makefile } from './makefile.mjs';
 import { runClang } from '@yowasp/clang';
 import { make } from '../public/cruby/make.mjs';
@@ -76,9 +76,9 @@ if (!onlySo) {
 // 2. 編集対象: ブラウザと同じ Makefile を、ブラウザと同じ make・clang（YoWASP）・wasm-opt（Binaryen.js）で実行する
 const incFlags = INCLUDE_DIRS.map((d) => `-I${d}`);
 const headers = {};
-for (const { name } of EDITABLE) writeFileSync(`${OUT}/src/${name}.c`, readFileSync(path.join(WORK, 'ruby', `${name}.c`)));
+for (const e of EDITABLE) writeFileSync(`${OUT}/src/${e.label}`, readFileSync(e.dir === 'build' ? path.join(B, e.label) : path.join(WORK, 'ruby', e.label)));
 // 編集できるファイルはヘッダに入れない（#include される vm_eval.c なども、書き換えた中身をコンパイラに渡す）
-const editablePaths = new Set(EDITABLE.map((e) => `ruby/${e.name}.c`));
+const editablePaths = new Set(EDITABLE.map(srcPath));
 // ソースごとの依存ファイル（コンパイルのときは、そのソースの依存だけをコンパイラに渡す）
 const depsOf = {};
 for (const { name } of COMPILED) {
@@ -101,7 +101,7 @@ writeFileSync(`${OUT}/Makefile`, mk);
   const fs = new Map();
   let clock = 1;
   for (const [p, text] of Object.entries(headers)) fs.set(p, { mtime: 0, data: text });
-  for (const { name } of EDITABLE) fs.set(`ruby/${name}.c`, { mtime: 1, data: readFileSync(`${OUT}/src/${name}.c`, 'utf8') });
+  for (const e of EDITABLE) fs.set(srcPath(e), { mtime: 1, data: readFileSync(`${OUT}/src/${e.label}`, 'utf8') });
   const commands = createCommands({ runClang, binaryen, fs, now: () => ++clock, isHeader: headerFilter(depsOf) });
   const ok = await make({
     makefile: mk,

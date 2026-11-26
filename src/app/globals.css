@@ -145,6 +145,7 @@ button.link:hover { text-decoration: underline; background: none; }
 .hint[open] summary::before { transform: rotate(90deg); }
 .hint[open] summary { margin-bottom: 8px; color: var(--fg); }
 .lesson-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; font-size: 13px; }
+.lesson-nav-top { margin-top: 0; margin-bottom: 12px; }
 
 /* 区切り線（ドラッグで大きさを変える）。見た目は 1px、掴める幅は広め */
 .splitter { position: relative; background: var(--border); touch-action: none; z-index: 2; }

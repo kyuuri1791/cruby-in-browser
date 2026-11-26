@@ -2,7 +2,8 @@
 "use client";
 
 export type Manifest = {
-  editable: { name: string; label: string }[];
+  /** dir はブラウザの中で置くフォルダ（省略時は ruby） */
+  editable: { name: string; label: string; dir?: string }[];
 };
 
 let manifestPromise: Promise<Manifest> | null = null;
@@ -15,12 +16,13 @@ export const loadManifest = () =>
 const originals = new Map<string, Promise<string>>();
 export function loadOriginal(name: string): Promise<string> {
   if (!originals.has(name)) {
-    // Makefile 以外は Ruby の C のソース（array なら src/array.c）
-    const url = name === "Makefile" ? "/cruby/assets/Makefile" : `/cruby/assets/src/${name}.c`;
-    const p = fetch(url, { cache: "no-cache" }).then((r) => {
-      if (!r.ok) throw new Error(`${name === "Makefile" ? name : `${name}.c`} を読み込めませんでした`);
-      return r.text();
-    });
+    // Makefile 以外は Ruby のソース（array なら src/array.c、vm_inc なら src/vm.inc）
+    const p = (name === "Makefile" ? Promise.resolve("Makefile") : loadManifest().then((m) => m.editable.find((e) => e.name === name)?.label ?? `${name}.c`)).then((label) =>
+      fetch(label === "Makefile" ? "/cruby/assets/Makefile" : `/cruby/assets/src/${label}`, { cache: "no-cache" }).then((r) => {
+        if (!r.ok) throw new Error(`${label} を読み込めませんでした`);
+        return r.text();
+      }),
+    );
     originals.set(name, p);
     p.catch(() => originals.delete(name));
   }
