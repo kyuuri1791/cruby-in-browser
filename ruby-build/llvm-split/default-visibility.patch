@@ -29,3 +29,22 @@
      WriteBitcodeToFile(*MPart, Out->os());
  
      // Declare success.
+@@ -318,6 +333,18 @@
+               "splitModule implementation\n";
+   }
+ 
++  // cruby-in-browser: 外に出す local なシンボルの名前に、出力ファイルの名前からとった接頭辞を付ける。
++  // 別々の共有ライブラリにしたとき、ほかのライブラリの同じ名前のシンボルとぶつからないようにする
++  if (DefaultVisibility && !PreserveLocals) {
++    std::string Prefix = "__split.";
++    for (char C : OutputFilename)
++      Prefix += isAlnum(C) ? C : '_';
++    Prefix += '.';
++    for (GlobalValue &GV : M->global_values())
++      if (GV.hasLocalLinkage() && !GV.isDeclaration())
++        GV.setName(Prefix + (GV.hasName() ? GV.getName().str() : std::string("anon")));
++  }
++
+   SplitModule(*M, NumOutputs, HandleModulePart, PreserveLocals, RoundRobin);
+   return 0;
+ }

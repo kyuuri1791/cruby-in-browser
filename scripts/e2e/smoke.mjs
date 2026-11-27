@@ -22,7 +22,7 @@ await page.goto(BASE);
 await page.waitForSelector('.lesson-toc', { timeout: 60000 });
 r.expect('目次は最初は閉じている', (await page.$$('.lesson-toc li')).length === 0);
 await page.click('.toc-toggle');
-r.expect('トップがそのままアプリで、目次を開くと 22 個並ぶ', (await page.$$('.lesson-toc li')).length === 22);
+r.expect('トップがそのままアプリで、目次を開くと 25 個並ぶ', (await page.$$('.lesson-toc li')).length === 25);
 r.expect('教材の欄を畳むボタンがない', !(await page.$('.lesson-collapse, .lesson-expand')));
 r.expect('クリアの印がない', !(await page.$('.done-mark')));
 
@@ -79,7 +79,7 @@ await h.click('make');
 await h.click('bin/rspec');
 out = await h.out();
 r.expect('make で wasm-ld の「not yet stable」の警告が出ない', !out.includes('not yet stable'), out);
-r.expect(`array: spec が通る (${Date.now() - t}ms)`, out.includes('$ bin/rspec spec/07_spec.rb') && out.includes('3 examples, 0 failures') && out.includes('  #second'), out);
+r.expect(`array: spec が通る (${Date.now() - t}ms)`, out.includes('$ bin/rspec spec/10_spec.rb') && out.includes('3 examples, 0 failures') && out.includes('  #second'), out);
 await h.open('libruby-edit.so');
 info = await page.$eval('.binary-info', (e) => e.innerText);
 r.expect('libruby-edit.so の情報', /^WebAssembly 共有ライブラリ・[\d,]+ バイト$/.test(info.trim()), info);
@@ -100,7 +100,7 @@ r.expect('章を切り替えても読み込み直さない', await page.evaluate
 r.expect('問題文が切り替わる', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('String#shout'));
 r.expect('出力の内容が残る', (await h.out()) === outBefore);
 r.expect('章を切り替えると main.rb が開く', (await page.$eval('.wb-file', (e) => e.textContent)) === 'main.rb');
-r.expect('課題をチェックのボタンが今の章の spec になる', (await page.$$eval('.wb-term-head button', (bs) => bs.map((b) => b.textContent).join('|'))).includes('bin/rspec spec/08_spec.rb'));
+r.expect('課題をチェックのボタンが今の章の spec になる', (await page.$$eval('.wb-term-head button', (bs) => bs.map((b) => b.textContent).join('|'))).includes('bin/rspec spec/11_spec.rb'));
 await h.open('array.c');
 r.expect('章を切り替えても書き換えが残る', await hasM());
 await page.goBack();
@@ -119,7 +119,7 @@ await page.waitForFunction(() => location.search === '?lesson=array-second');
 // spec/ に全章の spec がある
 await page.$$eval('.wb-tree-folder', (fs) => fs.filter((f) => f.textContent.includes('spec') && f.textContent.includes('›')).forEach((f) => f.click()));
 const specNames = await page.$$eval('.wb-tree-item .name', (es) => es.map((e) => e.textContent).filter((t) => t.endsWith('_spec.rb')));
-r.expect('spec フォルダに課題のある全て（20 個）の spec がある', specNames.length === 20, specNames.join(','));
+r.expect('spec フォルダに課題のある全て（23 個）の spec がある', specNames.length === 23, specNames.join(','));
 
 // 6. 再読み込みすると元に戻る
 await page.goto(`${BASE}/?lesson=array-second`);

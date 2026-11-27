@@ -4,6 +4,13 @@ import { readFileSync } from 'node:fs';
 
 export const src = (n) => readFileSync(new URL(`../../public/cruby/assets/src/${n}.c`, import.meta.url), 'utf8');
 const vmInc = () => readFileSync(new URL('../../public/cruby/assets/src/vm.inc', import.meta.url), 'utf8');
+const srcFile = (label) => readFileSync(new URL(`../../public/cruby/assets/src/${label}`, import.meta.url), 'utf8');
+/** prism.c の字句解析で、全角の ＋（UTF-8 で EF BC 8B）を PM_TOKEN_PLUS にする */
+const lexFullwidthPlus = (src) => {
+  const at = "                default: {\n                    if (*parser->current.start != '_') {\n                        size_t width = char_is_identifier_start(";
+  if (src.split(at).length !== 2) throw new Error('prism.c: 目印が見つからない');
+  return src.replace(at, "                default: {\n                    if (parser->end - parser->current.start >= 3 && (uint8_t) parser->current.start[0] == 0xEF && (uint8_t) parser->current.start[1] == 0xBC && (uint8_t) parser->current.start[2] == 0x8B) {\n                        parser->current.end += 2;\n                        lex_state_set(parser, PM_LEX_STATE_BEG);\n                        LEX(PM_TOKEN_PLUS);\n                    }\n" + at.slice('                default: {\n'.length));
+};
 /** vm.inc の命令 insn の本体の中だけで置き換える */
 const inInsn = (s, insn, from, to) => {
   const start = s.indexOf(`INSN_ENTRY(${insn})\n`);
@@ -138,6 +145,20 @@ export const answers = {
       src('vm').replace('#include "vm_insnhelper.c"\n', 'static VALUE cfunc_log = Qnil;\n\n#include "vm_insnhelper.c"\n').replace('#include "vm_exec.c"\n', 'static VALUE\nvm_cfunc_calls(VALUE self)\n{\n    VALUE log = rb_ary_new();\n    cfunc_log = log;\n    rb_yield(Qnil);\n    cfunc_log = Qnil;\n    return log;\n}\n\n#include "vm_exec.c"\n'),
       '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
       'rb_gc_register_address(&cfunc_log);\n    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);',
+    ),
+  },
+  lexer: { 'prism.c': lexFullwidthPlus(srcFile('prism.c')) },
+  parser: {
+    'prism.c': lexFullwidthPlus(srcFile('prism.c')).replace(
+      '    node->name = pm_parser_constant_id_token(parser, operator);\n    return node;',
+      '    if (operator->type == PM_TOKEN_PLUS && operator->end - operator->start == 3) {\n        node->name = pm_parser_constant_id_constant(parser, "+", 1);\n    } else {\n        node->name = pm_parser_constant_id_token(parser, operator);\n    }\n    return node;',
+    ),
+  },
+  'constant-fold': {
+    'prism_compile.c': after(
+      srcFile('prism_compile.c'),
+      '      case idFreeze: {\n        if (pm_opt_str_freeze_p(iseq, node)) {\n            VALUE value = parse_static_literal_string(iseq, scope_node, node->receiver, &((const pm_string_node_t * ) node->receiver)->unescaped);\n            const struct rb_callinfo *callinfo = new_callinfo(iseq, idFreeze, 0, 0, NULL, FALSE);\n            PUSH_INSN2(ret, location, opt_str_freeze, value, callinfo);\n            if (popped) PUSH_INSN(ret, location, pop);\n            return;\n        }\n        break;\n      }',
+      '  case idPLUS: {\n        const pm_node_t *arg = node->arguments && node->arguments->arguments.size == 1 ? node->arguments->arguments.nodes[0] : NULL;\n        if (node->receiver && PM_NODE_TYPE_P(node->receiver, PM_INTEGER_NODE) && arg && PM_NODE_TYPE_P(arg, PM_INTEGER_NODE) && node->block == NULL) {\n            VALUE sum = rb_int_plus(parse_integer((const pm_integer_node_t *) node->receiver), parse_integer((const pm_integer_node_t *) arg));\n            if (!SPECIAL_CONST_P(sum)) RB_OBJ_SET_SHAREABLE(sum);\n            if (!popped) PUSH_INSN1(ret, location, putobject, sum);\n            return;\n        }\n        break;\n      }',
     ),
   },
   'opt-plus': {

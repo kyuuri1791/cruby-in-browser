@@ -70,6 +70,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
             {tocOpen && <ol>
               {lessons.map((l, i) => (
                 <li key={l.slug}>
+                  {l.part && <div className="toc-part">{l.part}</div>}
                   <button className={l.slug === slug ? "toc-item active" : "toc-item"} aria-current={l.slug === slug ? "page" : undefined} onClick={() => show(l.slug, true)}>
                     <span className="toc-num">{i}</span>
                     <span className="toc-title">{l.title}</span>

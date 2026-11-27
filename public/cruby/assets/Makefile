@@ -17,13 +17,15 @@ WASMOPTFLAGS = --asyncify --pass-arg=asyncify-import-globals -g
 
 OBJS = out/version.o out/array.o out/string.o out/numeric.o out/hash.o out/object.o out/range.o out/time.o out/proc.o out/class.o
 VM_LIBS = out/libruby-vm.0.so out/libruby-vm.1.so out/libruby-vm.2.so out/libruby-vm.3.so
+PRISM_LIBS = out/libruby-prism.0.so out/libruby-prism.1.so out/libruby-prism.2.so out/libruby-prism.3.so
+COMPILE_LIBS = out/libruby-compile.0.so out/libruby-compile.1.so out/libruby-compile.2.so out/libruby-compile.3.so
 
 MAKEFLAGS += -j4
 
 .PHONY: all
 .SECONDARY:
 
-all: out/libruby-edit.so $(VM_LIBS)
+all: out/libruby-edit.so $(VM_LIBS) $(PRISM_LIBS) $(COMPILE_LIBS)
 
 out/libruby-edit.so: $(OBJS)
 	$(CC) $(LDFLAGS) $^ -o $@
@@ -33,7 +35,16 @@ out/libruby-vm.%.so: out/vm.bc.%.o
 	$(CC) $(LDFLAGS) $< -o $@
 	$(WASMOPT) -O1 $(WASMOPTFLAGS) $@ -o $@
 
+out/libruby-prism.%.so: out/prism/prism.bc.%.o
+	$(CC) $(LDFLAGS) $< -o $@
+	$(WASMOPT) -O1 $(WASMOPTFLAGS) $@ -o $@
+
+out/libruby-compile.%.so: out/compile.bc.%.o
+	$(CC) $(LDFLAGS) $< -o $@
+	$(WASMOPT) -O1 $(WASMOPTFLAGS) $@ -o $@
+
 out/vm.bc: ruby/vm_eval.c ruby/vm_method.c ruby/vm_insnhelper.c build/vm.inc
+out/compile.bc: ruby/prism_compile.c
 
 out/%.o: ruby/%.c
 	$(CC) $(CFLAGS) $(INCFLAGS) -c $< -o $@

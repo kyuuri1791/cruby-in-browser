@@ -225,7 +225,7 @@ export default function Workbench({ current, specs, ref }: Props) {
   const labelOf = (name: string) =>
     name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").at(-1)! : (files.find((f) => f.name === name)?.label ?? `${name}.c`);
   const pathOf = (name: string) =>
-    name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").join(" › ") : `${files.find((f) => f.name === name)?.dir ?? "ruby"} › ${labelOf(name)}`;
+    name === MAKEFILE ? MAKEFILE : isRuby(name) || isBinary(name) ? name.split("/").join(" › ") : `${(files.find((f) => f.name === name)?.dir ?? "ruby").split("/").join(" › ")} › ${labelOf(name)}`;
   const icon = (name: string) =>
     name === MAKEFILE ? (
       <span className="file-icon mk-icon" aria-hidden="true">mk</span>
@@ -251,15 +251,22 @@ export default function Workbench({ current, specs, ref }: Props) {
       </button>
     </li>
   );
-  const folder = (label: string, children: string[]) => {
-    const open = !collapsed.has(label);
+  // subfolders は中に入れるフォルダ（ruby/prism など）。key はたたんだ状態を覚えるための名前
+  const folder = (label: string, children: string[], depth = 0, subfolders: [string, string[]][] = [], key = label) => {
+    const open = !collapsed.has(key);
+    const all = [...children, ...subfolders.flatMap(([, c]) => c)];
     return (
-      <li key={`dir:${label}`} role="treeitem" aria-expanded={open} aria-selected={false} className="wb-tree-folder-item">
+      <li key={`dir:${key}`} role="treeitem" aria-expanded={open} aria-selected={false} className="wb-tree-folder-item">
         {/* 中身が全てバイナリか編集できないファイルなら、フォルダも薄く出す */}
-        <button className={`wb-tree-folder${children.every((c) => isBinary(c) || isReadOnly(c)) ? " readonly" : ""}`} onClick={() => toggleFolder(label)}>
+        <button className={`wb-tree-folder${all.every((c) => isBinary(c) || isReadOnly(c)) ? " readonly" : ""}`} style={depth ? { paddingLeft: 10 + depth * 14 } : undefined} onClick={() => toggleFolder(key)}>
           <span className="chevron" aria-hidden="true">{open ? "⌄" : "›"}</span> {label}
         </button>
-        {open && <ul role="group" className="wb-tree-group">{children.map((c) => treeItem(c, 1))}</ul>}
+        {open && (
+          <ul role="group" className="wb-tree-group">
+            {subfolders.map(([sub, c]) => folder(sub, c, depth + 1, [], `${key}/${sub}`))}
+            {children.map((c) => treeItem(c, depth + 1))}
+          </ul>
+        )}
       </li>
     );
   };
@@ -281,7 +288,12 @@ export default function Workbench({ current, specs, ref }: Props) {
           {files.some((f) => f.dir === "build") && folder("build", files.filter((f) => f.dir === "build").map((f) => f.name))}
           {libFiles.length > 0 && folder("lib", libFiles)}
           {outFiles.length > 0 && folder("out", outFiles)}
-          {folder("ruby", files.filter((f) => !f.dir).map((f) => f.name))}
+          {folder(
+            "ruby",
+            files.filter((f) => !f.dir).map((f) => f.name),
+            0,
+            [...new Set(files.filter((f) => f.dir?.startsWith("ruby/")).map((f) => f.dir!))].map((d) => [d.slice("ruby/".length), files.filter((f) => f.dir === d).map((f) => f.name)]),
+          )}
           {folder("spec", specFiles)}
           {rootFiles.map((name) => treeItem(name, 0))}
         </ul>

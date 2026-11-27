@@ -2,6 +2,7 @@
 //   lib        … まとめる共有ライブラリ（省略時は EDIT_LIBS の先頭）
 //   includedBy … 単独ではコンパイルせず、そのファイルに #include されるもの
 //   dir        … ブラウザの中で置くフォルダ（省略時は ruby。build は Ruby のビルドで生成されたファイル）
+//   name は out/ の下の名前で、ruby/ の下のパスから .c を除いたもの（prism/prism.c なら prism/prism）
 export const EDITABLE = [
   { name: 'version', label: 'version.c' },
   { name: 'array', label: 'array.c' },
@@ -21,6 +22,10 @@ export const EDITABLE = [
   { name: 'vm_insnhelper', label: 'vm_insnhelper.c', includedBy: 'vm' },
   // 命令の本体。insns.def から生成されたものを vm_exec.c が #include している（命令の追加はできない）
   { name: 'vm_inc', label: 'vm.inc', dir: 'build', includedBy: 'vm' },
+  // パーサ（prism。字句解析と構文解析）と、AST を命令列にするコンパイラ（compile.c が prism_compile.c を #include）
+  { name: 'prism/prism', label: 'prism.c', dir: 'ruby/prism', lib: 'libruby-prism.so' },
+  { name: 'compile', label: 'compile.c', lib: 'libruby-compile.so' },
+  { name: 'prism_compile', label: 'prism_compile.c', includedBy: 'compile' },
 ];
 /** ブラウザの中のパス（ruby/array.c、build/vm.inc） */
 export const srcPath = (e) => `${e.dir ?? 'ruby'}/${e.label}`;
@@ -58,6 +63,9 @@ export const LIBS = ['libc.so', 'libwasi-emulated-mman.so', 'libwasi-emulated-si
 export const EDIT_LIBS = [
   { name: 'libruby-edit.so', optimize: false },
   { name: 'libruby-vm.so', optimize: true, split: 4 },
+  // パーサとコンパイラも大きく、最適化しないと rspec などの読み込みが遅くなる
+  { name: 'libruby-prism.so', optimize: true, split: 4 },
+  { name: 'libruby-compile.so', optimize: true, split: 4 },
 ];
 /** make の並列実行の数（Makefile の MAKEFLAGS） */
 export const JOBS = 4;

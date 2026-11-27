@@ -100,6 +100,7 @@ button.link:hover { text-decoration: underline; background: none; }
 .toc-num { min-width: 1.4em; font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; }
 .toc-item.active .toc-num { color: var(--accent); }
 .toc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toc-part { padding: 8px 16px 2px 16px; color: var(--muted); font-size: 11px; font-weight: 600; }
 
 /* 問題文 */
 .lesson-text { padding: 20px 24px 40px; max-width: 720px; }

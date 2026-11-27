@@ -17,6 +17,8 @@ export type Ref = { title: string; url: string };
 export type Lesson = {
   slug: string;
   title: string;
+  /** 目次で、この章の前に出す部の見出し（部の最初の章にだけ書く） */
+  part?: string;
   body?: Block[];
   /** 参考文献。手順の後、課題の上に並べる */
   refs?: Ref[];
@@ -54,7 +56,7 @@ export const lessons: Lesson[] = [
         "`make` でビルド、`./ruby main.rb` で実行、`bin/rspec spec/…` で今の課題の spec を実行",
       ),
       p("このサイトは、CRuby の中を実際に動かして確かめるためのハンズオン環境です。仕組みの説明は書いていないので、手順を試したら各章の参考文献を読んでください。"),
-      p("課題で扱うのは、VM の命令の一部とメソッド呼び出し、メソッドの定義と探索、オブジェクトの表現、ブロックです。GC・パーサ・JIT は扱いません。"),
+      p("課題で扱うのは、パーサとコンパイラ、VM の命令の一部とメソッド呼び出し、メソッドの定義と探索、オブジェクトの表現、ブロックです。GC・JIT は扱いません。"),
       note("標準ライブラリと rspec が入っています。ページを再読み込みすると、書き換えた内容は元に戻ります。"),
     ],
   },
@@ -98,6 +100,208 @@ RSpec.describe "RUBY_DESCRIPTION" do
 
   it "バージョンを含む" do
     expect(RUBY_DESCRIPTION).to include(RUBY_VERSION)
+  end
+end`),
+  },
+  {
+    slug: "lexer",
+    part: "第 1 部　p 1 + 2 を一周する",
+    title: "字句解析（prism.c）",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p Ruby::Prism.lex("p 1 + 2").value.map { _1[0].type }
+p Ruby::Prism.lex("p +2").value.map { _1[0].type }
+p Ruby::Prism.lex("p 1 +2").value.map { _1[0].type }
+p Ruby::Prism.lex("p 1 ＋ 2").value.map { _1[0].type }`),
+      p("2. `prism.c` の `parser_lex` の `case '+':` で、最後にある `LEX(PM_TOKEN_PLUS);` を `LEX(PM_TOKEN_MINUS);` に変える。`make` し、`main.rb` に下を書いて実行する。`p 1 + 2` は何を出すか。"),
+      rb(`
+p Ruby::Prism.lex("p 1 + 2").value.map { _1[0].type }
+p 1 + 2`),
+    ],
+    refs: [
+      { title: "Advent of Prism: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2023/11/30/advent-of-prism-part-0.html" },
+      { title: "第 11 章「状態付きスキャナ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/contextual.html" },
+      { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
+    ],
+    task: [
+      p("全角の `＋` を、`+` と同じ `PLUS` の字句にする。"),
+      rb(`
+Ruby::Prism.lex("1 ＋ 2").value.map { _1[0].type } #=> [:INTEGER, :PLUS, :INTEGER, :EOF]`),
+    ],
+    hints: [
+      note("どの記号にも当たらなかった文字は、`parser_lex` の `switch` の `default:` で識別子として読まれます。"),
+      note("`＋` は UTF-8 で `EF BC 8B` の 3 バイトです。"),
+    ],
+    answer: [
+      diff("ruby/prism/prism.c", `
+@@ -11370,6 +11370,11 @@ parser_lex(pm_parser_t *parser) {
+                     LEX(lex_at_variable(parser));
+ 
+                 default: {
++                    if (parser->end - parser->current.start >= 3 && (uint8_t) parser->current.start[0] == 0xEF && (uint8_t) parser->current.start[1] == 0xBC && (uint8_t) parser->current.start[2] == 0x8B) {
++                        parser->current.end += 2;
++                        lex_state_set(parser, PM_LEX_STATE_BEG);
++                        LEX(PM_TOKEN_PLUS);
++                    }
+                     if (*parser->current.start != '_') {
+                         size_t width = char_is_identifier_start(parser, parser->current.start, parser->end - parser->current.start);`),
+    ],
+    spec: spec(`
+RSpec.describe "全角の ＋" do
+  def types(code) = Ruby::Prism.lex(code).value.map { _1[0].type }
+
+  it "PLUS の字句になる" do
+    expect(types("1 ＋ 2")).to eq([:INTEGER, :PLUS, :INTEGER, :EOF])
+  end
+
+  it "前後に空白がなくても PLUS の字句になる" do
+    expect(types("1＋2")).to eq([:INTEGER, :PLUS, :INTEGER, :EOF])
+  end
+
+  it "半角の + はそのまま" do
+    expect(types("1 + 2")).to eq([:INTEGER, :PLUS, :INTEGER, :EOF])
+  end
+end`),
+  },
+  {
+    slug: "parser",
+    title: "構文解析（prism.c）",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`pp Ruby::Prism.parse("p 1 + 2").value`),
+      p("2. `prism.c` の `pm_call_node_binary_create` にある次の 2 行で、`receiver` と `argument` を入れ替える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      c(`
+node->receiver = receiver;
+pm_arguments_node_arguments_append(parser->arena, arguments, argument);`),
+      rb(`
+p 10 - 1
+p 10.-(1)
+p 2 ** 3
+p "a" + "b"`),
+    ],
+    refs: [
+      { title: "Advent of Prism: Part 13 - Calls (part 1)（Kevin Newton）", url: "https://kddnewton.com/2023/12/13/advent-of-prism-part-13.html" },
+      { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
+      { title: "第 10 章「パーサ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/parser.html" },
+    ],
+    task: [
+      p("前の章の `＋` を、`+` と同じメソッド呼び出しにする。"),
+      rb(`
+1 ＋ 2 #=> 3
+Ruby::Prism.parse("1 ＋ 2").value.statements.body[0].name #=> :+`),
+    ],
+    hints: [
+      note("前の章の課題の変更も要ります。前の章の手順 2 で、字句を `MINUS` にしても `p 1 + 2` が 3 になったのはなぜかを考えてみてください。"),
+    ],
+    answer: [
+      p("前の章の解答例の変更に加えて、次の変更をする。"),
+      diff("ruby/prism/prism.c", `
+@@ -2995,7 +2995,11 @@ pm_call_node_binary_create(pm_parser_t *
+     pm_arguments_node_arguments_append(parser->arena, arguments, argument);
+     node->arguments = arguments;
+ 
+-    node->name = pm_parser_constant_id_token(parser, operator);
++    if (operator->type == PM_TOKEN_PLUS && operator->end - operator->start == 3) {
++        node->name = pm_parser_constant_id_constant(parser, "+", 1);
++    } else {
++        node->name = pm_parser_constant_id_token(parser, operator);
++    }
+     return node;
+ }`),
+    ],
+    spec: spec(`
+RSpec.describe "全角の ＋ の呼び出し" do
+  it "+ のメソッド呼び出しになる" do
+    expect(Ruby::Prism.parse("1 ＋ 2").value.statements.body[0].name).to eq(:+)
+  end
+
+  it "足し算になる" do
+    expect(eval("1 ＋ 2")).to eq(3)
+  end
+
+  it "opt_plus 命令にコンパイルされる" do
+    insns = RubyVM::InstructionSequence.compile("x = 1; x ＋ 2").to_a.last.grep(Array).map(&:first)
+    expect(insns).to include(:opt_plus)
+  end
+end`),
+  },
+  {
+    slug: "constant-fold",
+    title: "コンパイラ（prism_compile.c）",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+pp Ruby::Prism.parse("p 1 + 2").value
+puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm`),
+      p("2. `prism_compile.c` の `pm_compile_node` の `case PM_INTEGER_NODE:` で、`PUSH_INSN1(ret, location, putobject, operand);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      c(`if (operand == INT2FIX(2)) operand = INT2FIX(20);`),
+      rb(`
+p 1 + 2
+p eval("1 + 2")
+p "1 + 2"
+p [2].size`),
+      p("3. `main.rb` に次を書いて実行する。"),
+      rb(`puts RubyVM::InstructionSequence.compile('"a".freeze').disasm`),
+    ],
+    refs: [
+      { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
+      { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
+      { title: "Advent of Prism: Part 13 - Calls (part 1)（Kevin Newton）", url: "https://kddnewton.com/2023/12/13/advent-of-prism-part-13.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("整数リテラルどうしの `+` を、コンパイル時に計算して `putobject` 1 つにする。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("1 + 2").disasm
+# 0000 putobject                              3
+# 0002 leave
+x = 1
+x + 2 #=> 3（opt_plus のまま）`),
+    ],
+    hints: [
+      note("3 の `opt_str_freeze` を出しているのは、`pm_compile_call_node` の `switch (method_id)` です。"),
+      note("整数の足し算は `rb_int_plus(a, b)` でできます。"),
+    ],
+    answer: [
+      diff("ruby/prism_compile.c", `
+@@ -7571,6 +7571,16 @@ pm_compile_call_node(rb_iseq_t *iseq, co
+         }
+         break;
+       }
++      case idPLUS: {
++        const pm_node_t *arg = node->arguments && node->arguments->arguments.size == 1 ? node->arguments->arguments.nodes[0] : NULL;
++        if (node->receiver && PM_NODE_TYPE_P(node->receiver, PM_INTEGER_NODE) && arg && PM_NODE_TYPE_P(arg, PM_INTEGER_NODE) && node->block == NULL) {
++            VALUE sum = rb_int_plus(parse_integer((const pm_integer_node_t *) node->receiver), parse_integer((const pm_integer_node_t *) arg));
++            if (!SPECIAL_CONST_P(sum)) RB_OBJ_SET_SHAREABLE(sum);
++            if (!popped) PUSH_INSN1(ret, location, putobject, sum);
++            return;
++        }
++        break;
++      }
+     }
+ 
+     if (PM_NODE_FLAG_P(node, PM_CALL_NODE_FLAGS_ATTRIBUTE_WRITE) && !popped) {`),
+    ],
+    spec: spec(`
+RSpec.describe "整数リテラルどうしの +" do
+  def insns(code) = RubyVM::InstructionSequence.compile(code).to_a.last.grep(Array).map(&:first)
+
+  it "putobject 1 つにする" do
+    expect(insns("1 + 2")).to eq([:putobject, :leave])
+  end
+
+  it "計算した値になる" do
+    expect(eval("1 + 2")).to eq(3)
+  end
+
+  it "Fixnum に収まらない値でも畳む" do
+    expect(insns("#{2**64} + 1")).to eq([:putobject, :leave])
+    expect(eval("#{2**64} + 1")).to eq(2**64 + 1)
+  end
+
+  it "変数を含む式は畳まない" do
+    expect(insns("x = 1; x + 2")).to include(:opt_plus)
   end
 end`),
   },
@@ -215,7 +419,214 @@ RSpec.describe RubyVM do
 end`),
   },
   {
+    slug: "opt-plus",
+    title: "opt_plus 命令",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "fast path\\n");`),
+      rb(`
+a = 1
+b = 2
+p a + b
+p a.send(:+, b)
+p "x" + "y"`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("2 の `fast path` を通った回数を返す `RubyVM.opt_plus_count` を作る。"),
+      rb(`
+a = 1
+b = 2
+before = RubyVM.opt_plus_count
+a + b
+RubyVM.opt_plus_count - before #=> 1
+a.send(:+, b)
+RubyVM.opt_plus_count - before #=> 1`),
+    ],
+    hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -7056,11 +7056,20 @@
+ #endif
+ }
+ 
++static unsigned long opt_plus_count;
++
++static VALUE
++vm_opt_plus_count(VALUE self)
++{
++    return ULONG2NUM(opt_plus_count);
++}
++
+ static VALUE
+ vm_opt_plus(VALUE recv, VALUE obj)
+ {
+     if (FIXNUM_2_P(recv, obj) &&
+         OP_UNREDEFINED_P(PLUS, INTEGER)) {
++        opt_plus_count++;
+         return rb_fix_plus_fix(recv, obj);
+     }
+     else if (FLONUM_2_P(recv, obj) &&`),
+      diff("ruby/vm.c", `
+@@ -4779,6 +4779,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".opt_plus_count" do
+    let(:a) { 1 }
+    let(:b) { 2 }
+
+    context "整数どうしを + で足したとき" do
+      it "1 増える" do
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x + y
+        expect(RubyVM.opt_plus_count - before).to eq(1)
+      end
+    end
+
+    context "send(:+) で呼んだとき" do
+      it "増えない" do
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x.send(:+, y)
+        expect(RubyVM.opt_plus_count - before).to eq(0)
+      end
+    end
+
+    context "Integer#+ を再定義したとき" do
+      it "増えない" do
+        Integer.prepend(Module.new { def +(other) = super })
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x + y
+        expect(RubyVM.opt_plus_count - before).to eq(0)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "cfunc-call",
+    title: "メソッド呼び出し",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm
+puts RubyVM::InstructionSequence.compile("[1].size").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
+      rb(`
+p 1 + 2
+[1, 2].at(0)
+[1, 2].first
+[1].size
+"a".upcase`),
+      p("3. `main.rb` に次を書いて実行する。"),
+      rb(`p Array.instance_method(:first).source_location`),
+      p("4. `vm_insnhelper.c` の `vm_search_method_slowpath0` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
+      c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
+      rb(`3.times { [1, 2].at(0) }`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
+      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
+    ],
+    task: [
+      p("ブロックの中で、2 の行を通って呼ばれた C の関数のメソッド名を、順に配列で返す `RubyVM.cfunc_calls` を作る。"),
+      rb(`
+RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
+RubyVM.cfunc_calls { [1].size }                 #=> []`),
+    ],
+    hints: [
+      note("値を入れる配列は `vm.c` の静的変数にします。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`#include \"vm_insnhelper.c\"` より前で宣言すれば使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
+    ],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -3933,6 +3933,7 @@
+     if (len >= 0) rb_check_arity(argc, len, len);
+ 
+     reg_cfp->sp = stack_bottom;
++    if (!NIL_P(cfunc_log)) rb_ary_push(cfunc_log, ID2SYM(me->def->original_id));
+     val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);
+ 
+     CHECK_CFP_CONSISTENCY("vm_call_cfunc");`),
+      diff("ruby/vm.c", `
+@@ -706,8 +706,20 @@
+ 
+ static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
+ 
++static VALUE cfunc_log = Qnil;
++
+ #include "vm_insnhelper.c"
+ 
++static VALUE
++vm_cfunc_calls(VALUE self)
++{
++    VALUE log = rb_ary_new();
++    cfunc_log = log;
++    rb_yield(Qnil);
++    cfunc_log = Qnil;
++    return log;
++}
++
+ #include "vm_exec.c"
+ 
+ #include "vm_method.c"
+@@ -4779,6 +4791,8 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_gc_register_address(&cfunc_log);
++    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".cfunc_calls" do
+    it "C の関数で書かれたメソッドを順に返す" do
+      expect(RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase }).to eq([:at, :upcase])
+    end
+
+    it "Ruby で書かれたメソッドは返さない" do
+      expect(RubyVM.cfunc_calls { [1, 2].first }).to eq([])
+    end
+
+    it "特化命令で処理されたメソッドは返さない" do
+      expect(RubyVM.cfunc_calls { [1].size }).to eq([])
+    end
+
+    it "send で呼んだときは返す" do
+      expect(RubyVM.cfunc_calls { [1].send(:size) }).to eq([:size])
+    end
+  end
+end`),
+  },
+  {
     slug: "outer-locals",
+    part: "第 2 部　深掘り",
     title: "getlocal 命令",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
@@ -421,211 +832,6 @@ RSpec.describe RubyVM do
       RubyVM.falsy_zero = false
       r = x ? :t : :f
       expect(r).to eq(:t)
-    end
-  end
-end`),
-  },
-  {
-    slug: "cfunc-call",
-    title: "メソッド呼び出し",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-puts RubyVM::InstructionSequence.compile("[1, 2].at(0)").disasm
-puts RubyVM::InstructionSequence.compile("[1].size").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
-      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
-      rb(`
-[1, 2].at(0)
-[1, 2].first
-[1].size
-"a".upcase`),
-      p("3. `main.rb` に次を書いて実行する。"),
-      rb(`p Array.instance_method(:first).source_location`),
-      p("4. `vm_insnhelper.c` の `vm_search_method_slowpath0` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
-      c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
-      rb(`3.times { [1, 2].at(0) }`),
-    ],
-    refs: [
-      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
-      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
-      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
-      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
-    ],
-    task: [
-      p("ブロックの中で、2 の行を通って呼ばれた C の関数のメソッド名を、順に配列で返す `RubyVM.cfunc_calls` を作る。"),
-      rb(`
-RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
-RubyVM.cfunc_calls { [1].size }                 #=> []`),
-    ],
-    hints: [
-      note("値を入れる配列は `vm.c` の静的変数にします。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`#include \"vm_insnhelper.c\"` より前で宣言すれば使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
-    ],
-    answer: [
-      diff("ruby/vm_insnhelper.c", `
-@@ -3933,6 +3933,7 @@
-     if (len >= 0) rb_check_arity(argc, len, len);
- 
-     reg_cfp->sp = stack_bottom;
-+    if (!NIL_P(cfunc_log)) rb_ary_push(cfunc_log, ID2SYM(me->def->original_id));
-     val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);
- 
-     CHECK_CFP_CONSISTENCY("vm_call_cfunc");`),
-      diff("ruby/vm.c", `
-@@ -706,8 +706,20 @@
- 
- static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
- 
-+static VALUE cfunc_log = Qnil;
-+
- #include "vm_insnhelper.c"
- 
-+static VALUE
-+vm_cfunc_calls(VALUE self)
-+{
-+    VALUE log = rb_ary_new();
-+    cfunc_log = log;
-+    rb_yield(Qnil);
-+    cfunc_log = Qnil;
-+    return log;
-+}
-+
- #include "vm_exec.c"
- 
- #include "vm_method.c"
-@@ -4779,6 +4791,8 @@
-      * This module is not portable between Ruby implementations.
-      */
-     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
-+    rb_gc_register_address(&cfunc_log);
-+    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);
-     rb_undef_alloc_func(rb_cRubyVM);
-     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
-     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe RubyVM do
-  describe ".cfunc_calls" do
-    it "C の関数で書かれたメソッドを順に返す" do
-      expect(RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase }).to eq([:at, :upcase])
-    end
-
-    it "Ruby で書かれたメソッドは返さない" do
-      expect(RubyVM.cfunc_calls { [1, 2].first }).to eq([])
-    end
-
-    it "特化命令で処理されたメソッドは返さない" do
-      expect(RubyVM.cfunc_calls { [1].size }).to eq([])
-    end
-
-    it "send で呼んだときは返す" do
-      expect(RubyVM.cfunc_calls { [1].send(:size) }).to eq([:size])
-    end
-  end
-end`),
-  },
-  {
-    slug: "opt-plus",
-    title: "opt_plus 命令",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
-puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
-      c(`fprintf(stderr, "fast path\\n");`),
-      rb(`
-a = 1
-b = 2
-p a + b
-p a.send(:+, b)
-p "x" + "y"`),
-    ],
-    refs: [
-      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
-      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
-      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
-    ],
-    task: [
-      p("2 の `fast path` を通った回数を返す `RubyVM.opt_plus_count` を作る。"),
-      rb(`
-a = 1
-b = 2
-before = RubyVM.opt_plus_count
-a + b
-RubyVM.opt_plus_count - before #=> 1
-a.send(:+, b)
-RubyVM.opt_plus_count - before #=> 1`),
-    ],
-    hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
-    answer: [
-      diff("ruby/vm_insnhelper.c", `
-@@ -7056,11 +7056,20 @@
- #endif
- }
- 
-+static unsigned long opt_plus_count;
-+
-+static VALUE
-+vm_opt_plus_count(VALUE self)
-+{
-+    return ULONG2NUM(opt_plus_count);
-+}
-+
- static VALUE
- vm_opt_plus(VALUE recv, VALUE obj)
- {
-     if (FIXNUM_2_P(recv, obj) &&
-         OP_UNREDEFINED_P(PLUS, INTEGER)) {
-+        opt_plus_count++;
-         return rb_fix_plus_fix(recv, obj);
-     }
-     else if (FLONUM_2_P(recv, obj) &&`),
-      diff("ruby/vm.c", `
-@@ -4779,6 +4779,7 @@
-      * This module is not portable between Ruby implementations.
-      */
-     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
-+    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);
-     rb_undef_alloc_func(rb_cRubyVM);
-     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
-     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe RubyVM do
-  describe ".opt_plus_count" do
-    let(:a) { 1 }
-    let(:b) { 2 }
-
-    context "整数どうしを + で足したとき" do
-      it "1 増える" do
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x + y
-        expect(RubyVM.opt_plus_count - before).to eq(1)
-      end
-    end
-
-    context "send(:+) で呼んだとき" do
-      it "増えない" do
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x.send(:+, y)
-        expect(RubyVM.opt_plus_count - before).to eq(0)
-      end
-    end
-
-    context "Integer#+ を再定義したとき" do
-      it "増えない" do
-        Integer.prepend(Module.new { def +(other) = super })
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x + y
-        expect(RubyVM.opt_plus_count - before).to eq(0)
-      end
     end
   end
 end`),

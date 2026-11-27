@@ -11,7 +11,7 @@ CRuby の C のソースを書き換え、ブラウザの中でビルドして�
 ## 仕組み
 
 - Ruby 本体（master）は WebAssembly（wasm32-wasip1）向けにビルドし、配信しておく。編集できる C のファイルだけは本体から抜いておく
-- 編集できるファイルは、ブラウザの中で [YoWASP Clang](https://github.com/YoWASP/clang) がコンパイルし、共有ライブラリ（`libruby-edit.so` と、VM の `libruby-vm.0.so` 〜 `libruby-vm.3.so`）にまとめる。asyncify は [Binaryen.js](https://github.com/WebAssembly/binaryen) の wasm-opt でかける。VM は大きな 1 ファイルなので、bitcode にしてから WASI 向けにビルドした `llvm-split` で分け、`make -j4` で並列にビルドする
+- 編集できるファイルは、ブラウザの中で [YoWASP Clang](https://github.com/YoWASP/clang) がコンパイルし、共有ライブラリ（`libruby-edit.so` と、VM・パーサ・コンパイラの `libruby-vm.0.so` など）にまとめる。asyncify は [Binaryen.js](https://github.com/WebAssembly/binaryen) の wasm-opt でかける。`vm.c`・`prism.c`・`compile.c` は大きいので、bitcode にしてから WASI 向けにビルドした `llvm-split` で分け、`make -j4` で並列にビルドする
 - `make` は、GNU make の一部を JavaScript で書き直したもの（`public/cruby/make.mjs`）。配信している `Makefile` をそのまま読む
 - `./ruby` を実行すると、本体と共有ライブラリを自作の動的リンカ（`public/cruby/dylink.mjs`）でつないで起動する。WASI は [browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) を使う
 - 標準ライブラリと RSpec は、`make install` と `gem install` したものをそのまま tar にして配信する

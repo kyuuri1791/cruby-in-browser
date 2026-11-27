@@ -45,8 +45,8 @@ export default function AboutDialog() {
             <li>Ruby 本体は stringio・ripper などの拡張を静的リンクし、編集できる C のファイルを除いて WebAssembly（PIE）にビルドしてある。</li>
             <li>make は、GNU make の一部を JavaScript で書き直したもの。エクスプローラーの Makefile をそのまま読んで実行する。</li>
             <li>clang は YoWASP Clang、wasm-opt は Binaryen.js で、どちらもブラウザの中で動く。同時に動かせるよう、それぞれ別の Web Worker で実行する。</li>
-            <li>編集できるファイルは <code>libruby-edit.so</code> と、VM の <code>libruby-vm.0.so</code> 〜 <code>libruby-vm.3.so</code> にまとめ、<code>./ruby</code> の起動時に動的リンクする。VM は最適化しないと Ruby の実行全体が遅くなるので、こちらだけ最適化をかけている。</li>
-            <li>VM の <code>vm.c</code> は大きな 1 ファイルなので、bitcode にしてから <code>llvm-split</code>（WASI 向けにビルドしたもの）で 4 つに分け、<code>make -j4</code> で並列にビルドする。</li>
+            <li>編集できるファイルは <code>libruby-edit.so</code> と、VM・パーサ・コンパイラの共有ライブラリ <code>libruby-vm.0.so</code> などにまとめ、<code>./ruby</code> の起動時に動的リンクする。VM・パーサ・コンパイラは最適化しないと Ruby の実行全体が遅くなるので、こちらだけ最適化をかけている。</li>
+            <li><code>vm.c</code>・<code>prism.c</code>・<code>compile.c</code> は大きなファイルなので、bitcode にしてから <code>llvm-split</code>（WASI 向けにビルドしたもの）でそれぞれ 4 つに分け、<code>make -j4</code> で並列にビルドする。</li>
             <li>標準ライブラリは <code>make install</code>、rspec は <code>gem install</code> したものをそのまま使う。</li>
           </ul>
           <h2>使っているソフトウェアとライセンス</h2>

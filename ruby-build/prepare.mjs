@@ -61,7 +61,7 @@ if (!onlySo) {
   const noedit = `${TMP}/libruby-noedit.a`;
   execFileSync('cp', [path.join(B, 'libruby-static.a'), noedit]);
   // 編集対象と、拡張・エンコーディングのダミー初期化（本物を extinit.o / encinit.o でリンクする）を抜く
-  execFileSync(path.join(WORK, 'fakesdk/bin/llvm-ar'), ['d', noedit, ...COMPILED.map((e) => `${e.name}.o`), 'dmyext.o', 'dmyenc.o']);
+  execFileSync(path.join(WORK, 'fakesdk/bin/llvm-ar'), ['d', noedit, ...COMPILED.map((e) => `${e.name.split('/').at(-1)}.o`), 'dmyext.o', 'dmyenc.o']);
   const extLibs = execSync('ls ext/*/*.a ext/*/*/*.a 2>/dev/null || true', { cwd: B, shell: '/bin/sh' }).toString().split(/\s+/).filter(Boolean);
   execFileSync(CC, ['-Wl,-pie', '-Wl,--import-memory', '-Wl,--export-all', '-Wl,--no-gc-sections', '-Wl,--experimental-pic', '-Wl,--unresolved-symbols=import-dynamic', '-Wl,--strip-debug',
     'main.o', 'ext/extinit.o', 'enc/encinit.o', '-Wl,--whole-archive', ...extLibs, 'enc/libenc.a', 'enc/libtrans.a', noedit, '-Wl,--no-whole-archive',
@@ -78,7 +78,7 @@ if (!onlySo) {
 // 2. 編集対象: ブラウザと同じ Makefile を、ブラウザと同じ make・clang（YoWASP）・wasm-opt（Binaryen.js）で実行する
 const incFlags = INCLUDE_DIRS.map((d) => `-I${d}`);
 const headers = {};
-for (const e of EDITABLE) writeFileSync(`${OUT}/src/${e.label}`, readFileSync(e.dir === 'build' ? path.join(B, e.label) : path.join(WORK, 'ruby', e.label)));
+for (const e of EDITABLE) writeFileSync(`${OUT}/src/${e.label}`, readFileSync(e.dir === 'build' ? path.join(B, e.label) : path.join(WORK, e.dir ?? 'ruby', e.label)));
 // 編集できるファイルはヘッダに入れない（#include される vm_eval.c なども、書き換えた中身をコンパイラに渡す）
 const editablePaths = new Set(EDITABLE.map(srcPath));
 // ソースごとの依存ファイル（コンパイルのときは、そのソースの依存だけをコンパイラに渡す）
@@ -88,7 +88,7 @@ for (const { name } of COMPILED) {
   // 依存ヘッダ（sysroot 以外）。ブラウザ側の仮想 FS では build/ と ruby/ に置く
   const base = ['--target=wasm32-wasip1', ...COMPILE_FLAGS, ...incFlags];
   const deps = execFileSync('clang', [...base, `--sysroot=${SYSROOT}`, '-isystem', `${SYSROOT}/include/wasm32-wasip1`, '-MM', src], { cwd: B })
-    .toString().replace(/\\\n/g, ' ').split(/\s+/).slice(2).filter((f) => f && !f.includes('yowasp-sysroot') && !f.endsWith(`${name}.c`));
+    .toString().replace(/\\\n/g, ' ').split(/\s+/).slice(2).filter((f) => f && !f.includes('yowasp-sysroot') && path.resolve(B, f) !== src);
   depsOf[`ruby/${name}.c`] = [];
   for (const f of deps) {
     const key = path.relative(WORK, path.resolve(B, f)).replace(/^build-(pic|ext)\//, 'build/');

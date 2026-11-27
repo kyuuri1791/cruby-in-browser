@@ -65,6 +65,22 @@
       "label": "vm.inc",
       "dir": "build",
       "includedBy": "vm"
+    },
+    {
+      "name": "prism/prism",
+      "label": "prism.c",
+      "dir": "ruby/prism",
+      "lib": "libruby-prism.so"
+    },
+    {
+      "name": "compile",
+      "label": "compile.c",
+      "lib": "libruby-compile.so"
+    },
+    {
+      "name": "prism_compile",
+      "label": "prism_compile.c",
+      "includedBy": "compile"
     }
   ],
   "editLibs": [
@@ -82,6 +98,30 @@
     },
     {
       "name": "libruby-vm.3.so"
+    },
+    {
+      "name": "libruby-prism.0.so"
+    },
+    {
+      "name": "libruby-prism.1.so"
+    },
+    {
+      "name": "libruby-prism.2.so"
+    },
+    {
+      "name": "libruby-prism.3.so"
+    },
+    {
+      "name": "libruby-compile.0.so"
+    },
+    {
+      "name": "libruby-compile.1.so"
+    },
+    {
+      "name": "libruby-compile.2.so"
+    },
+    {
+      "name": "libruby-compile.3.so"
     }
   ],
   "prebuilt": [
@@ -95,7 +135,9 @@
     "out/time.o",
     "out/proc.o",
     "out/class.o",
-    "out/vm.bc"
+    "out/vm.bc",
+    "out/prism/prism.bc",
+    "out/compile.bc"
   ],
   "libs": [
     "libc.so",
