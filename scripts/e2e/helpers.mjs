@@ -154,6 +154,89 @@ export const answers = {
       '    if (operator->type == PM_TOKEN_PLUS && operator->end - operator->start == 3) {\n        node->name = pm_parser_constant_id_constant(parser, "+", 1);\n    } else {\n        node->name = pm_parser_constant_id_token(parser, operator);\n    }\n    return node;',
     ),
   },
+  'p-compile': {
+    'prism_compile.c': after(
+      srcFile('prism_compile.c'),
+      '      case idFreeze: {\n        if (pm_opt_str_freeze_p(iseq, node)) {\n            VALUE value = parse_static_literal_string(iseq, scope_node, node->receiver, &((const pm_string_node_t * ) node->receiver)->unescaped);\n            const struct rb_callinfo *callinfo = new_callinfo(iseq, idFreeze, 0, 0, NULL, FALSE);\n            PUSH_INSN2(ret, location, opt_str_freeze, value, callinfo);\n            if (popped) PUSH_INSN(ret, location, pop);\n            return;\n        }\n        break;\n      }',
+      '  case idPLUS: {\n        const pm_node_t *arg = node->arguments && node->arguments->arguments.size == 1 ? node->arguments->arguments.nodes[0] : NULL;\n        if (node->receiver && PM_NODE_TYPE_P(node->receiver, PM_INTEGER_NODE) && arg && PM_NODE_TYPE_P(arg, PM_INTEGER_NODE) &&\n            parse_integer((const pm_integer_node_t *) node->receiver) == INT2FIX(1) && parse_integer((const pm_integer_node_t *) arg) == INT2FIX(2)) {\n            if (!popped) PUSH_INSN1(ret, location, putobject, INT2FIX(4));\n            return;\n        }\n        break;\n      }',
+    ),
+  },
+  'p-vm': {
+    'vm_insnhelper.c': src('vm_insnhelper').replace(
+      '        OP_UNREDEFINED_P(PLUS, INTEGER)) {\n        return rb_fix_plus_fix(recv, obj);',
+      '        OP_UNREDEFINED_P(PLUS, INTEGER)) {\n        if (recv == INT2FIX(1) && obj == INT2FIX(2)) return INT2FIX(4);\n        return rb_fix_plus_fix(recv, obj);',
+    ),
+  },
+  'p-call': {
+    'numeric.c': src('numeric').replace(
+      'rb_int_plus(VALUE x, VALUE y)\n{\n',
+      'rb_int_plus(VALUE x, VALUE y)\n{\n    if (x == INT2FIX(1) && y == INT2FIX(2)) return INT2FIX(4);\n',
+    ),
+  },
+  keyword: {
+    'prism.c': srcFile('prism.c').replace(
+      'pm_keyword_find(const uint8_t *start, const uint8_t *end) {\n    ptrdiff_t width = end - start;\n',
+      'pm_keyword_find(const uint8_t *start, const uint8_t *end) {\n    ptrdiff_t width = end - start;\n    if (width == 6 && memcmp(start, "もし", 6) == 0) return pm_keyword_find((const uint8_t *) "if", (const uint8_t *) "if" + 2);\n',
+    ),
+  },
+  precedence: {
+    'prism.c': srcFile('prism.c').replace('    [PM_TOKEN_STAR_STAR] = RIGHT_ASSOCIATIVE(PM_BINDING_POWER_EXPONENT),', '    [PM_TOKEN_STAR_STAR] = LEFT_ASSOCIATIVE(PM_BINDING_POWER_FACTOR),'),
+  },
+  'numeric-suffix': {
+    'prism.c': srcFile('prism.c').replace(
+      '        type = lex_numeric_prefix(parser, &seen_e);\n',
+      '        type = lex_numeric_prefix(parser, &seen_e);\n        if (type == PM_TOKEN_INTEGER && parser->integer.start == parser->current.start && match(parser, \'k\')) {\n            parser->integer.value *= 1000;\n        }\n',
+    ),
+  },
+  'var-or-call': {
+    'prism.c': srcFile('prism.c').replace(
+      "    return (end - start == 2) && (start[0] == 'i') && (start[1] == 't');",
+      "    return ((end - start == 2) && (start[0] == 'i') && (start[1] == 't')) ||\n           ((end - start == 4) && memcmp(start, \"that\", 4) == 0);",
+    ),
+  },
+  'branch-nil': {
+    'prism_compile.c': srcFile('prism_compile.c').replace(
+      '    const pm_node_location_t location = PM_NODE_START_LOCATION(cond);\n\nagain:\n    switch (PM_NODE_TYPE(cond)) {',
+      '    const pm_node_location_t location = PM_NODE_START_LOCATION(cond);\n\nagain:\n    if (PM_NODE_TYPE_P(cond, PM_CALL_NODE)) {\n        const pm_call_node_t *call = (const pm_call_node_t *) cond;\n        if (call->receiver && !call->arguments && !call->block && scope_node->constants[pm_constant_id_index(call->name)] == idNilP) {\n            pm_compile_node(iseq, call->receiver, ret, false, scope_node);\n            PUSH_INSNL(ret, location, branchnil, then_label);\n            PUSH_INSNL(ret, location, jump, else_label);\n            return;\n        }\n    }\n\n    switch (PM_NODE_TYPE(cond)) {',
+    ),
+  },
+  'stack-depth': {
+    'vm.c': after(
+      src('vm').replace('#include "vm_exec.c"\n', '#include "vm_exec.c"\n\nstatic VALUE\nvm_stack_depth(VALUE self)\n{\n    const rb_control_frame_t *cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(GET_EC()->cfp);\n    return LONG2NUM(cfp->sp - vm_base_ptr(cfp));\n}\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "stack_depth", vm_stack_depth, 0);',
+    ),
+  },
+  'frame-depth': {
+    'vm.c': after(
+      src('vm').replace('#include "vm_exec.c"\n', '#include "vm_exec.c"\n\nstatic VALUE\nvm_frame_depth(VALUE self)\n{\n    const rb_execution_context_t *ec = GET_EC();\n    return LONG2NUM(RUBY_VM_END_CONTROL_FRAME(ec) - RUBY_VM_PREVIOUS_CONTROL_FRAME(ec->cfp));\n}\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "frame_depth", vm_frame_depth, 0);',
+    ),
+  },
+  'block-splat': {
+    'vm_insnhelper.c': src('vm_insnhelper').replace(
+      '        if (arg_setup_type == arg_setup_block &&\n            calling->argc == 1 &&',
+      '        if (block_autosplat &&\n            arg_setup_type == arg_setup_block &&\n            calling->argc == 1 &&',
+    ),
+    'vm.c': after(
+      src('vm')
+        .replace('#include "vm_insnhelper.c"\n', 'static bool block_autosplat = true;\n\n#include "vm_insnhelper.c"\n')
+        .replace('#include "vm_exec.c"\n', '#include "vm_exec.c"\n\nstatic VALUE\nvm_set_block_autosplat(VALUE self, VALUE flag)\n{\n    block_autosplat = RTEST(flag);\n    return flag;\n}\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "block_autosplat=", vm_set_block_autosplat, 1);',
+    ),
+  },
+  'ivar-cache': {
+    'vm_insnhelper.c': src('vm_insnhelper').replace('    else { // cache miss case\n', '    else { // cache miss case\n        ivar_misses++;\n'),
+    'vm.c': after(
+      src('vm')
+        .replace('#include "vm_insnhelper.c"\n', 'static unsigned long ivar_misses;\n\n#include "vm_insnhelper.c"\n')
+        .replace('#include "vm_exec.c"\n', '#include "vm_exec.c"\n\nstatic VALUE\nvm_ivar_misses(VALUE self)\n{\n    unsigned long before = ivar_misses;\n    rb_yield(Qnil);\n    return ULONG2NUM(ivar_misses - before);\n}\n'),
+      '    rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);',
+      'rb_define_singleton_method(rb_cRubyVM, "ivar_misses", vm_ivar_misses, 0);',
+    ),
+  },
   'constant-fold': {
     'prism_compile.c': after(
       srcFile('prism_compile.c'),

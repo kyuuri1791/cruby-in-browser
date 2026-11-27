@@ -131,7 +131,8 @@ Ruby::Prism.lex("1 ＋ 2").value.map { _1[0].type } #=> [:INTEGER, :PLUS, :INTEG
     ],
     hints: [
       note("どの記号にも当たらなかった文字は、`parser_lex` の `switch` の `default:` で識別子として読まれます。"),
-      note("`＋` は UTF-8 で `EF BC 8B` の 3 バイトです。"),
+      note("`＋` は UTF-8 で `EF BC 8B` の 3 バイトです。字句の先頭は `parser->current.start` で、次の条件で判定できます。字句の終わり（`parser->current.end`）は 1 バイト目の次を指しています。"),
+      c(`parser->end - parser->current.start >= 3 && (uint8_t) parser->current.start[0] == 0xEF && (uint8_t) parser->current.start[1] == 0xBC && (uint8_t) parser->current.start[2] == 0x8B`),
     ],
     answer: [
       diff("ruby/prism/prism.c", `
@@ -227,7 +228,7 @@ RSpec.describe "全角の ＋ の呼び出し" do
 end`),
   },
   {
-    slug: "constant-fold",
+    slug: "p-compile",
     title: "コンパイラ（prism_compile.c）",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
@@ -247,6 +248,420 @@ p [2].size`),
     refs: [
       { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
       { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("コンパイラで、整数リテラルの `1 + 2` を `putobject 4` にする。"),
+      rb(`
+1 + 2         #=> 4
+x = 1
+x + 2         #=> 3
+1.send(:+, 2) #=> 3`),
+    ],
+    hints: [
+      note("3 の `opt_str_freeze` は、`pm_compile_call_node` の `switch (method_id)` で出しています。`+` は `idPLUS` です。"),
+      note("`node->receiver` と `node->arguments->arguments.nodes[0]` が、`+` の左右のノードです。整数リテラルのノードは `PM_INTEGER_NODE` で、値は `parse_integer` で取れます。"),
+    ],
+    answer: [
+      diff("ruby/prism_compile.c", `
+@@ -7571,6 +7571,15 @@ pm_compile_call_node(rb_iseq_t *iseq, co
+         }
+         break;
+       }
++      case idPLUS: {
++        const pm_node_t *arg = node->arguments && node->arguments->arguments.size == 1 ? node->arguments->arguments.nodes[0] : NULL;
++        if (node->receiver && PM_NODE_TYPE_P(node->receiver, PM_INTEGER_NODE) && arg && PM_NODE_TYPE_P(arg, PM_INTEGER_NODE) &&
++            parse_integer((const pm_integer_node_t *) node->receiver) == INT2FIX(1) && parse_integer((const pm_integer_node_t *) arg) == INT2FIX(2)) {
++            if (!popped) PUSH_INSN1(ret, location, putobject, INT2FIX(4));
++            return;
++        }
++        break;
++      }
+     }
+ 
+     if (PM_NODE_FLAG_P(node, PM_CALL_NODE_FLAGS_ATTRIBUTE_WRITE) && !popped) {`),
+    ],
+    spec: spec(`
+RSpec.describe "コンパイラで 1 + 2 を 4 にする" do
+  it "1 + 2 は 4" do
+    expect(eval("1 + 2")).to eq(4)
+  end
+
+  it "putobject 4 にコンパイルされる" do
+    insns = RubyVM::InstructionSequence.compile("1 + 2").to_a.last.grep(Array)
+    expect(insns).to eq([[:putobject, 4], [:leave]])
+  end
+
+  it "変数の足し算は変わらない" do
+    expect(eval("x = 1; x + 2")).to eq(3)
+  end
+
+  it "send で呼んだときは変わらない" do
+    expect(eval("1.send(:+, 2)")).to eq(3)
+  end
+end`),
+  },
+  {
+    slug: "p-vm",
+    title: "VM（vm_insnhelper.c）",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "fast path\\n");`),
+      rb(`
+p 1 + 2
+p 1.send(:+, 2)
+p "a" + "b"`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
+      { title: "Advent of YARV: Part 1 - Pushing onto the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/01/advent-of-yarv-part-1.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("`vm_opt_plus` で、整数の 1 と 2 を足したときだけ 4 を返す。"),
+      rb(`
+x = 1
+y = 2
+x + y         #=> 4
+1 + 2         #=> 4
+x.send(:+, y) #=> 3`),
+    ],
+    hints: [note("整数の 1 は `INT2FIX(1)` です。`VALUE` どうしは `==` で比べられます。")],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -7061,6 +7061,7 @@ vm_opt_plus(VALUE recv, VALUE obj)
+ {
+     if (FIXNUM_2_P(recv, obj) &&
+         OP_UNREDEFINED_P(PLUS, INTEGER)) {
++        if (recv == INT2FIX(1) && obj == INT2FIX(2)) return INT2FIX(4);
+         return rb_fix_plus_fix(recv, obj);
+     }
+     else if (FLONUM_2_P(recv, obj) &&`),
+    ],
+    spec: spec(`
+RSpec.describe "VM で 1 + 2 を 4 にする" do
+  let(:one) { 1 }
+  let(:two) { 2 }
+
+  it "変数の 1 と 2 を足すと 4" do
+    x = one
+    y = two
+    expect(x + y).to eq(4)
+  end
+
+  it "リテラルの 1 + 2 も 4" do
+    expect(eval("1 + 2")).to eq(4)
+  end
+
+  it "2 + 1 は 3 のまま" do
+    x = two
+    y = one
+    expect(x + y).to eq(3)
+  end
+
+  it "send で呼んだときは変わらない" do
+    expect(one.send(:+, two)).to eq(3)
+  end
+end`),
+  },
+  {
+    slug: "p-call",
+    title: "C の関数（numeric.c）",
+    body: [
+      p("1. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。"),
+      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
+      rb(`
+p 1 + 2
+p 1.send(:+, 2)`),
+      p("2. `main.rb` に次を書いて実行する。"),
+      rb(`p Integer.instance_method(:+).source_location`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "(3) 演習：メソッドの追加（Ruby Hack Challenge）", url: "https://github.com/ko1/rubyhackchallenge/blob/master/JA/3_practice.md" },
+      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
+    ],
+    task: [
+      p("`Integer#+` の C の関数で、1 と 2 を足したときだけ 4 を返す。"),
+      rb(`
+1.send(:+, 2) #=> 4
+1 + 2         #=> 3`),
+    ],
+    hints: [note("`numeric.c` の `Init_Numeric` で `\"+\"` を登録している行から、関数を探してください。")],
+    answer: [
+      diff("ruby/numeric.c", `
+@@ -4202,6 +4202,7 @@ rb_fix_plus(VALUE x, VALUE y)
+ VALUE
+ rb_int_plus(VALUE x, VALUE y)
+ {
++    if (x == INT2FIX(1) && y == INT2FIX(2)) return INT2FIX(4);
+     if (FIXNUM_P(x)) {
+         return fix_plus(x, y);
+     }`),
+    ],
+    spec: spec(`
+RSpec.describe "Integer#+ の C の関数で 1 + 2 を 4 にする" do
+  let(:one) { 1 }
+  let(:two) { 2 }
+
+  it "send で呼ぶと 4" do
+    expect(one.send(:+, two)).to eq(4)
+  end
+
+  it "+ で書くと 3 のまま" do
+    x = one
+    y = two
+    expect(x + y).to eq(3)
+  end
+
+  it "2 + 1 は send でも 3" do
+    expect(two.send(:+, one)).to eq(3)
+  end
+end`),
+  },
+  {
+    slug: "keyword",
+    part: "第 2 部　深掘り",
+    title: "予約語と字句の状態",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p Ruby::Prism.lex("p +2").value.map { _1[0].type }
+p Ruby::Prism.lex("x = 1; p x +2").value.map { _1[0].type }
+p Ruby::Prism.lex("if x then 1 end").value.map { _1[0].type }
+p Ruby::Prism.lex("1 if x").value.map { _1[0].type }`),
+      p("2. `prism.c` の `parser_lex` の `case '+':` にある、`lex_state_spcarg_p(parser, space_seen) ? … : false` の 3 項演算子全体を `false` に変える。`make` し、`main.rb` に `p +2` を書いて実行する。何が起きるか。"),
+    ],
+    refs: [
+      { title: "第 11 章「状態付きスキャナ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/contextual.html" },
+      { title: "Advent of Prism: Part 7 - Control-flow（Kevin Newton）", url: "https://kddnewton.com/2023/12/07/advent-of-prism-part-7.html" },
+      { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
+    ],
+    task: [
+      p("`もし` を `if` と同じ予約語にする。"),
+      rb(`
+もし true then :t else :f end #=> :t
+:m もし true                  #=> :m`),
+    ],
+    hints: [
+      note("予約語は `pm_keyword_find` で表から探しています。"),
+      note("普通の `if` と後置の `if` の使い分けは、`lex_identifier` で `previous_lex_state` を見て決めています。`もし` を `if` の項目として返せば、使い分けもそのまま効きます。"),
+    ],
+    answer: [
+      diff("ruby/prism/prism.c", `
+@@ -8559,6 +8559,7 @@
+ static PRISM_INLINE const pm_keyword_t *
+ pm_keyword_find(const uint8_t *start, const uint8_t *end) {
+     ptrdiff_t width = end - start;
++    if (width == 6 && memcmp(start, "もし", 6) == 0) return pm_keyword_find((const uint8_t *) "if", (const uint8_t *) "if" + 2);
+     if (width < 2 || width > PM_KEYWORD_LENGTH_MAXIMUM) return NULL;
+ 
+     size_t uwidth = (size_t) width;`),
+    ],
+    spec: spec(`
+RSpec.describe "予約語の もし" do
+  def types(code) = Ruby::Prism.lex(code).value.map { _1[0].type }
+
+  it "文の頭では KEYWORD_IF になる" do
+    expect(types("もし x then 1 end").first).to eq(:KEYWORD_IF)
+    expect(eval("もし true then :t else :f end")).to eq(:t)
+  end
+
+  it "後ろに置くと KEYWORD_IF_MODIFIER になる" do
+    expect(types("1 もし x")[1]).to eq(:KEYWORD_IF_MODIFIER)
+    expect(eval(":m もし true")).to eq(:m)
+  end
+
+  it "もしも は識別子のまま" do
+    expect(eval("もしも = 1; もしも")).to eq(1)
+  end
+end`),
+  },
+  {
+    slug: "numeric-suffix",
+    title: "数値リテラル",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { _1[0].type }
+p Ruby::Prism.lex("3k").value.map { _1[0].type }`),
+      p("2. `prism.c` の `lex_numeric_prefix` で、`value = value * 10 + (uint64_t) (c - '0');` を `value = value * 10;` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      rb(`
+p 12
+p 1_2
+p 0x12
+p 12.5
+p 12345678901234567890`),
+    ],
+    refs: [
+      { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
+      { title: "リテラル（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2fliteral.html" },
+    ],
+    task: [
+      p("整数の後ろの `k` を 1000 倍の意味にする。"),
+      rb(`
+3k      #=> 3000
+12k + 1 #=> 12001`),
+    ],
+    hints: [
+      note("2 で見たとおり、小さな 10 進の整数は字句解析の途中で値まで計算しています（`parser->integer.value`）。その値は、`pm_integer_node_create` が `parser->integer.start == token->start` のときに使います。"),
+      note("`r` や `i` の接尾辞は、`lex_numeric` で `match(parser, 'r')` のように読んでいます。"),
+    ],
+    answer: [
+      diff("ruby/prism/prism.c", `
+@@ -8306,6 +8306,9 @@
+     if (parser->current.end < parser->end) {
+         bool seen_e = false;
+         type = lex_numeric_prefix(parser, &seen_e);
++        if (type == PM_TOKEN_INTEGER && parser->integer.start == parser->current.start && match(parser, 'k')) {
++            parser->integer.value *= 1000;
++        }
+ 
+         const uint8_t *end = parser->current.end;
+         pm_token_type_t suffix_type = type;`),
+    ],
+    spec: spec(`
+RSpec.describe "整数の k" do
+  it "1000 倍になる" do
+    expect(eval("3k")).to eq(3000)
+    expect(eval("12k + 1")).to eq(12001)
+  end
+
+  it "1 つの INTEGER の字句になる" do
+    expect(Ruby::Prism.lex("3k").value.map { _1[0].type }).to eq([:INTEGER, :EOF])
+  end
+
+  it "k のない整数は変わらない" do
+    expect(eval("3")).to eq(3)
+  end
+end`),
+  },
+  {
+    slug: "precedence",
+    title: "演算子の優先順位",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+def tree(n) = n.type == :call_node && n.arguments ? "(#{tree(n.receiver)} #{n.name} #{tree(n.arguments.arguments[0])})" : n.slice
+p tree(Ruby::Prism.parse("1 + 2 * 3").value.statements.body[0])
+p tree(Ruby::Prism.parse("1 - 2 - 3").value.statements.body[0])
+p tree(Ruby::Prism.parse("2 ** 3 ** 2").value.statements.body[0])`),
+      p("2. `prism.c` の `pm_binding_powers` で、`[PM_TOKEN_PLUS]` の `PM_BINDING_POWER_TERM` を `PM_BINDING_POWER_FACTOR` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      rb(`
+p 1 + 2 * 3
+p 2 * 3 + 1
+p 1 - 2 * 3`),
+    ],
+    refs: [
+      { title: "Pratt Parsers: Expression Parsing Made Easy（Bob Nystrom）", url: "https://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/" },
+      { title: "演算子式（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2foperator.html" },
+      { title: "第 10 章「パーサ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/parser.html" },
+    ],
+    task: [
+      p("`**` を、`*` と同じ優先順位の左結合にする。"),
+      rb(`
+2 ** 3 ** 2 #=> 64（(2 ** 3) ** 2）
+2 * 3 ** 2  #=> 36（(2 * 3) ** 2）
+1 + 2 ** 2  #=> 5`),
+    ],
+    hints: [note("`pm_binding_powers` の `LEFT_ASSOCIATIVE` と `RIGHT_ASSOCIATIVE` の定義を見比べてください。")],
+    answer: [
+      diff("ruby/prism/prism.c", `
+@@ -12795,7 +12795,7 @@
+     [PM_TOKEN_UMINUS_NUM] = { PM_BINDING_POWER_UMINUS, PM_BINDING_POWER_MAX, false, false },
+ 
+     // **
+-    [PM_TOKEN_STAR_STAR] = RIGHT_ASSOCIATIVE(PM_BINDING_POWER_EXPONENT),
++    [PM_TOKEN_STAR_STAR] = LEFT_ASSOCIATIVE(PM_BINDING_POWER_FACTOR),
+     [PM_TOKEN_USTAR_STAR] = RIGHT_ASSOCIATIVE_UNARY(PM_BINDING_POWER_UNARY),
+ 
+     // ! ~ +@`),
+    ],
+    spec: spec(`
+RSpec.describe "** の優先順位" do
+  it "左結合になる" do
+    expect(eval("2 ** 3 ** 2")).to eq(64)
+  end
+
+  it "* と同じ優先順位になる" do
+    expect(eval("2 * 3 ** 2")).to eq(36)
+    expect(eval("2 ** 3 * 2")).to eq(16)
+  end
+
+  it "+ よりは先に計算する" do
+    expect(eval("1 + 2 ** 2")).to eq(5)
+  end
+end`),
+  },
+  {
+    slug: "var-or-call",
+    title: "変数か、メソッド呼び出しか",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p Ruby::Prism.parse("foo").value.statements.body[0].type
+p Ruby::Prism.parse("foo = 1; foo").value.statements.body[1].type
+p Ruby::Prism.parse("[1].map { it }").value.statements.body[0].block.body.body[0].type`),
+      p("2. `prism.c` の `pm_token_is_it` の中身を `return false;` にする。`make` し、`main.rb` に下を書いて実行する。"),
+      rb(`
+p [1, 2].map { _1 * 2 }
+p [1, 2].map { it * 2 }`),
+    ],
+    refs: [
+      { title: "Advent of Prism: Part 3 - Reads（Kevin Newton）", url: "https://kddnewton.com/2023/12/03/advent-of-prism-part-3.html" },
+      { title: "Advent of Prism: Part 17 - Scopes（Kevin Newton）", url: "https://kddnewton.com/2023/12/17/advent-of-prism-part-17.html" },
+      { title: "第 12 章「構文木の構築」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/syntree.html" },
+    ],
+    task: [
+      p("ブロックの中の `that` を、`it` と同じ意味にする。"),
+      rb(`
+[1, 2].map { that * 2 } #=> [2, 4]
+that = 5
+that                    #=> 5`),
+    ],
+    hints: [note("`it` を変数として読むかどうかは、`parse_variable` が決めています。")],
+    answer: [
+      diff("ruby/prism/prism.c", `
+@@ -5466,7 +5466,8 @@
+  */
+ static PRISM_INLINE bool
+ pm_token_is_it(const uint8_t *start, const uint8_t *end) {
+-    return (end - start == 2) && (start[0] == 'i') && (start[1] == 't');
++    return ((end - start == 2) && (start[0] == 'i') && (start[1] == 't')) ||
++           ((end - start == 4) && memcmp(start, "that", 4) == 0);
+ }
+ 
+ /**`),
+    ],
+    spec: spec(`
+RSpec.describe "ブロックの that" do
+  it "it と同じく、ブロックの引数になる" do
+    expect(eval("[1, 2].map { that * 2 }")).to eq([2, 4])
+  end
+
+  it "代入したローカル変数の that はそのまま" do
+    expect(eval("that = 5; that")).to eq(5)
+  end
+
+  it "ブロックの外ではメソッド呼び出しのまま" do
+    expect { eval("that") }.to raise_error(NameError)
+  end
+end`),
+  },
+  {
+    slug: "constant-fold",
+    title: "定数畳み込み",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("1 + 2").disasm
+puts RubyVM::InstructionSequence.compile('"a".freeze').disasm`),
+    ],
+    refs: [
+      { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
+      { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
       { title: "Advent of Prism: Part 13 - Calls (part 1)（Kevin Newton）", url: "https://kddnewton.com/2023/12/13/advent-of-prism-part-13.html" },
       { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
     ],
@@ -260,7 +675,7 @@ x = 1
 x + 2 #=> 3（opt_plus のまま）`),
     ],
     hints: [
-      note("3 の `opt_str_freeze` を出しているのは、`pm_compile_call_node` の `switch (method_id)` です。"),
+      note("1 の `opt_str_freeze` を出しているのは、`pm_compile_call_node` の `switch (method_id)` です。"),
       note("整数の足し算は `rb_int_plus(a, b)` でできます。"),
     ],
     answer: [
@@ -302,6 +717,75 @@ RSpec.describe "整数リテラルどうしの +" do
 
   it "変数を含む式は畳まない" do
     expect(insns("x = 1; x + 2")).to include(:opt_plus)
+  end
+end`),
+  },
+  {
+    slug: "branch-nil",
+    title: "条件分岐のコンパイル",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("x = 1; x ? :t : :f").disasm
+puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :n : :v").disasm`),
+      p("2. `prism_compile.c` の `pm_compile_branch_condition` の最後にある `branchunless` を `branchif` に変える。`make` し、`main.rb` に `p 1` を書いて実行する。何が起きるか。"),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 14 - Branching（Kevin Newton）", url: "https://kddnewton.com/2022/12/14/advent-of-yarv-part-14.html" },
+      { title: "Advent of Prism: Part 7 - Control-flow（Kevin Newton）", url: "https://kddnewton.com/2023/12/07/advent-of-prism-part-7.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("条件が `x.nil?` のときは、`opt_nil_p` を使わずに `branchnil` 命令で分岐する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("x = nil; x.nil? ? :n : :v").disasm
+# 0003 getlocal_WC_0    x@0
+# 0005 branchnil        9
+# …
+x = nil
+x.nil? ? :n : :v #=> :n`),
+    ],
+    hints: [
+      note("`pm_compile_branch_condition` に `PM_CALL_NODE` の場合を足します。`branchnil` は、積まれた値が `nil` なら飛びます。"),
+      note("メソッド名は `scope_node->constants[pm_constant_id_index(call->name)]` で ID になります。`nil?` は `idNilP` です。"),
+    ],
+    answer: [
+      diff("ruby/prism_compile.c", `
+@@ -1048,6 +1048,16 @@
+     const pm_node_location_t location = PM_NODE_START_LOCATION(cond);
+ 
+ again:
++    if (PM_NODE_TYPE_P(cond, PM_CALL_NODE)) {
++        const pm_call_node_t *call = (const pm_call_node_t *) cond;
++        if (call->receiver && !call->arguments && !call->block && scope_node->constants[pm_constant_id_index(call->name)] == idNilP) {
++            pm_compile_node(iseq, call->receiver, ret, false, scope_node);
++            PUSH_INSNL(ret, location, branchnil, then_label);
++            PUSH_INSNL(ret, location, jump, else_label);
++            return;
++        }
++    }
++
+     switch (PM_NODE_TYPE(cond)) {
+       case PM_AND_NODE: {
+         const pm_and_node_t *cast = (const pm_and_node_t *) cond;`),
+    ],
+    spec: spec(`
+RSpec.describe "x.nil? の分岐" do
+  def insns(code) = RubyVM::InstructionSequence.compile(code).to_a.last.grep(Array).map(&:first)
+
+  it "branchnil で分岐する" do
+    expect(insns("x = nil; x.nil? ? :n : :v")).to include(:branchnil)
+    expect(insns("x = nil; x.nil? ? :n : :v")).not_to include(:opt_nil_p)
+  end
+
+  it "結果は変わらない" do
+    expect(eval("x = nil; x.nil? ? :n : :v")).to eq(:n)
+    expect(eval("x = 1; x.nil? ? :n : :v")).to eq(:v)
+    expect(eval("x = false; x.nil? ? :n : :v")).to eq(:v)
+  end
+
+  it "条件でない x.nil? はそのまま" do
+    expect(insns("x = nil; x.nil?")).to include(:opt_nil_p)
   end
 end`),
   },
@@ -419,214 +903,79 @@ RSpec.describe RubyVM do
 end`),
   },
   {
-    slug: "opt-plus",
-    title: "opt_plus 命令",
+    slug: "stack-depth",
+    title: "VM のスタック",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。命令ごとに、スタックに積まれている値の数を数えてみる。"),
       rb(`
-puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
-puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
-      c(`fprintf(stderr, "fast path\\n");`),
-      rb(`
-a = 1
-b = 2
-p a + b
-p a.send(:+, b)
-p "x" + "y"`),
+puts RubyVM::InstructionSequence.compile("x = [1, 2, 3]").disasm
+puts RubyVM::InstructionSequence.compile("p(1, 2)").disasm`),
     ],
     refs: [
-      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
-      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
-      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+      { title: "Advent of YARV: Part 1 - Pushing onto the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/01/advent-of-yarv-part-1.html" },
+      { title: "Advent of YARV: Part 2 - Manipulating the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/02/advent-of-yarv-part-2.html" },
     ],
     task: [
-      p("2 の `fast path` を通った回数を返す `RubyVM.opt_plus_count` を作る。"),
+      p("呼び出し元のフレームで、スタックに積まれている値の数を返す `RubyVM.stack_depth` を作る（ローカル変数は数えない）。"),
       rb(`
-a = 1
-b = 2
-before = RubyVM.opt_plus_count
-a + b
-RubyVM.opt_plus_count - before #=> 1
-a.send(:+, b)
-RubyVM.opt_plus_count - before #=> 1`),
-    ],
-    hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
-    answer: [
-      diff("ruby/vm_insnhelper.c", `
-@@ -7056,11 +7056,20 @@
- #endif
- }
- 
-+static unsigned long opt_plus_count;
-+
-+static VALUE
-+vm_opt_plus_count(VALUE self)
-+{
-+    return ULONG2NUM(opt_plus_count);
-+}
-+
- static VALUE
- vm_opt_plus(VALUE recv, VALUE obj)
- {
-     if (FIXNUM_2_P(recv, obj) &&
-         OP_UNREDEFINED_P(PLUS, INTEGER)) {
-+        opt_plus_count++;
-         return rb_fix_plus_fix(recv, obj);
-     }
-     else if (FLONUM_2_P(recv, obj) &&`),
-      diff("ruby/vm.c", `
-@@ -4779,6 +4779,7 @@
-      * This module is not portable between Ruby implementations.
-      */
-     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
-+    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);
-     rb_undef_alloc_func(rb_cRubyVM);
-     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
-     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe RubyVM do
-  describe ".opt_plus_count" do
-    let(:a) { 1 }
-    let(:b) { 2 }
-
-    context "整数どうしを + で足したとき" do
-      it "1 増える" do
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x + y
-        expect(RubyVM.opt_plus_count - before).to eq(1)
-      end
-    end
-
-    context "send(:+) で呼んだとき" do
-      it "増えない" do
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x.send(:+, y)
-        expect(RubyVM.opt_plus_count - before).to eq(0)
-      end
-    end
-
-    context "Integer#+ を再定義したとき" do
-      it "増えない" do
-        Integer.prepend(Module.new { def +(other) = super })
-        x = a
-        y = b
-        before = RubyVM.opt_plus_count
-        x + y
-        expect(RubyVM.opt_plus_count - before).to eq(0)
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "cfunc-call",
-    title: "メソッド呼び出し",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm
-puts RubyVM::InstructionSequence.compile("[1].size").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
-      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
-      rb(`
-p 1 + 2
-[1, 2].at(0)
-[1, 2].first
-[1].size
-"a".upcase`),
-      p("3. `main.rb` に次を書いて実行する。"),
-      rb(`p Array.instance_method(:first).source_location`),
-      p("4. `vm_insnhelper.c` の `vm_search_method_slowpath0` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
-      c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
-      rb(`3.times { [1, 2].at(0) }`),
-    ],
-    refs: [
-      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
-      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
-      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
-      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
-    ],
-    task: [
-      p("ブロックの中で、2 の行を通って呼ばれた C の関数のメソッド名を、順に配列で返す `RubyVM.cfunc_calls` を作る。"),
-      rb(`
-RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
-RubyVM.cfunc_calls { [1].size }                 #=> []`),
+x = [1, 2, RubyVM.stack_depth] #=> [1, 2, 2]
+y = 1 + RubyVM.stack_depth     #=> 2
+def f(a, b) = RubyVM.stack_depth
+f(1, 2)                        #=> 0`),
     ],
     hints: [
-      note("値を入れる配列は `vm.c` の静的変数にします。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`#include \"vm_insnhelper.c\"` より前で宣言すれば使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
+      note("C の関数の中では、`GET_EC()->cfp` がその関数のフレームで、`RUBY_VM_PREVIOUS_CONTROL_FRAME` で呼び出し元のフレームになります。"),
+      note("フレームの `sp` がスタックの先頭です。ローカル変数の後ろ（スタックの底）は `vm_base_ptr(cfp)` で取れます。"),
     ],
     answer: [
-      diff("ruby/vm_insnhelper.c", `
-@@ -3933,6 +3933,7 @@
-     if (len >= 0) rb_check_arity(argc, len, len);
- 
-     reg_cfp->sp = stack_bottom;
-+    if (!NIL_P(cfunc_log)) rb_ary_push(cfunc_log, ID2SYM(me->def->original_id));
-     val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);
- 
-     CHECK_CFP_CONSISTENCY("vm_call_cfunc");`),
       diff("ruby/vm.c", `
-@@ -706,8 +706,20 @@
+@@ -710,6 +710,13 @@
  
- static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
- 
-+static VALUE cfunc_log = Qnil;
-+
- #include "vm_insnhelper.c"
- 
-+static VALUE
-+vm_cfunc_calls(VALUE self)
-+{
-+    VALUE log = rb_ary_new();
-+    cfunc_log = log;
-+    rb_yield(Qnil);
-+    cfunc_log = Qnil;
-+    return log;
-+}
-+
  #include "vm_exec.c"
  
++static VALUE
++vm_stack_depth(VALUE self)
++{
++    const rb_control_frame_t *cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(GET_EC()->cfp);
++    return LONG2NUM(cfp->sp - vm_base_ptr(cfp));
++}
++
  #include "vm_method.c"
-@@ -4779,6 +4791,8 @@
+ #include "vm_eval.c"
+ 
+@@ -4779,6 +4786,7 @@
       * This module is not portable between Ruby implementations.
       */
      rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
-+    rb_gc_register_address(&cfunc_log);
-+    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);
++    rb_define_singleton_method(rb_cRubyVM, "stack_depth", vm_stack_depth, 0);
      rb_undef_alloc_func(rb_cRubyVM);
      rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
      rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
     ],
     spec: spec(`
 RSpec.describe RubyVM do
-  describe ".cfunc_calls" do
-    it "C の関数で書かれたメソッドを順に返す" do
-      expect(RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase }).to eq([:at, :upcase])
+  describe ".stack_depth" do
+    it "配列の要素として積んだ値を数える" do
+      x = [1, 2, RubyVM.stack_depth]
+      expect(x).to eq([1, 2, 2])
     end
 
-    it "Ruby で書かれたメソッドは返さない" do
-      expect(RubyVM.cfunc_calls { [1, 2].first }).to eq([])
+    it "+ の左の値を数える" do
+      y = 1 + RubyVM.stack_depth
+      expect(y).to eq(2)
     end
 
-    it "特化命令で処理されたメソッドは返さない" do
-      expect(RubyVM.cfunc_calls { [1].size }).to eq([])
-    end
-
-    it "send で呼んだときは返す" do
-      expect(RubyVM.cfunc_calls { [1].send(:size) }).to eq([:size])
+    it "ローカル変数は数えない" do
+      a = 1
+      b = 2
+      z = [RubyVM.stack_depth]
+      expect(z).to eq([0])
     end
   end
 end`),
   },
   {
     slug: "outer-locals",
-    part: "第 2 部　深掘り",
     title: "getlocal 命令",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
@@ -719,6 +1068,104 @@ RSpec.describe RubyVM do
     it "2 つ外のスコープの変数も数える" do
       x = 1
       expect(RubyVM.outer_reads { [1].each { x } }).to eq(1)
+    end
+  end
+end`),
+  },
+  {
+    slug: "ivar-cache",
+    title: "インスタンス変数とキャッシュ",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`puts RubyVM::InstructionSequence.compile("@a = 1; @a").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_getivar` で、`else { // cache miss case` の次に下の 1 行目を足す。`make` し、`main.rb` に下を書いて実行する。`miss @a` は何回出るか。"),
+      c(`if (id == rb_intern("@a")) fprintf(stderr, "miss @a\\n");`),
+      rb(`
+class R
+  def initialize(first) = first ? (@a = 1; @b = 2) : (@b = 2; @a = 1)
+  def a = @a
+end
+s1 = R.new(true)
+s2 = R.new(false)
+3.times { s1.a }
+[s1, s2, s1, s2].each { _1.a }`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 11 - Class and instance variables（Kevin Newton）", url: "https://kddnewton.com/2022/12/11/advent-of-yarv-part-11.html" },
+      { title: "Performance impact of the memoization idiom on modern Ruby（Rails at Scale）", url: "https://railsatscale.com/2023-10-24-memoization-pattern-and-object-shapes/" },
+      { title: "Feature #18776: Object Shapes（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/18776" },
+    ],
+    task: [
+      p("ブロックの中で、インスタンス変数を読むときのキャッシュが外れた回数を返す `RubyVM.ivar_misses` を作る。"),
+      rb(`
+s1.a
+RubyVM.ivar_misses { 3.times { s1.a } }            #=> 0
+RubyVM.ivar_misses { [s1, s2, s1, s2].each { _1.a } } #=> 3`),
+    ],
+    hints: [note("回数は `vm.c` の静的変数で数えます。`vm_insnhelper.c` から使うので、`#include \"vm_insnhelper.c\"` より前で宣言します。")],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -1310,6 +1310,7 @@
+         RUBY_ASSERT(!UNDEF_P(val));
+     }
+     else { // cache miss case
++        ivar_misses++;
+ #if USE_DEBUG_COUNTER
+         if (is_attr) {
+             if (cache.shape_offset != INVALID_SHAPE_ID) {`),
+      diff("ruby/vm.c", `
+@@ -706,10 +706,20 @@
+ 
+ static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
+ 
++static unsigned long ivar_misses;
++
+ #include "vm_insnhelper.c"
+ 
+ #include "vm_exec.c"
+ 
++static VALUE
++vm_ivar_misses(VALUE self)
++{
++    unsigned long before = ivar_misses;
++    rb_yield(Qnil);
++    return ULONG2NUM(ivar_misses - before);
++}
++
+ #include "vm_method.c"
+ #include "vm_eval.c"
+ 
+@@ -4779,6 +4789,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "ivar_misses", vm_ivar_misses, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".ivar_misses" do
+    let(:klass) do
+      Class.new do
+        def initialize(first) = first ? (@a = 1; @b = 2) : (@b = 2; @a = 1)
+        def a = @a
+      end
+    end
+
+    it "同じ形のオブジェクトなら外れない" do
+      s1 = klass.new(true)
+      s3 = klass.new(true)
+      s1.a
+      expect(RubyVM.ivar_misses { [s1, s3, s1].each { _1.a } }).to eq(0)
+    end
+
+    it "インスタンス変数を足した順が違うと外れる" do
+      s1 = klass.new(true)
+      s2 = klass.new(false)
+      s1.a
+      expect(RubyVM.ivar_misses { [s1, s2, s1, s2].each { _1.a } }).to eq(3)
     end
   end
 end`),
@@ -832,6 +1279,1029 @@ RSpec.describe RubyVM do
       RubyVM.falsy_zero = false
       r = x ? :t : :f
       expect(r).to eq(:t)
+    end
+  end
+end`),
+  },
+  {
+    slug: "opt-plus",
+    title: "opt_plus 命令",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
+puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "fast path\\n");`),
+      rb(`
+a = 1
+b = 2
+p a + b
+p a.send(:+, b)
+p "x" + "y"`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 9 回】 特化命令（るびま）", url: "https://magazine.rubyist.net/articles/0017/0017-YarvManiacs.html" },
+    ],
+    task: [
+      p("2 の `fast path` を通った回数を返す `RubyVM.opt_plus_count` を作る。"),
+      rb(`
+a = 1
+b = 2
+before = RubyVM.opt_plus_count
+a + b
+RubyVM.opt_plus_count - before #=> 1
+a.send(:+, b)
+RubyVM.opt_plus_count - before #=> 1`),
+    ],
+    hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -7056,11 +7056,20 @@
+ #endif
+ }
+ 
++static unsigned long opt_plus_count;
++
++static VALUE
++vm_opt_plus_count(VALUE self)
++{
++    return ULONG2NUM(opt_plus_count);
++}
++
+ static VALUE
+ vm_opt_plus(VALUE recv, VALUE obj)
+ {
+     if (FIXNUM_2_P(recv, obj) &&
+         OP_UNREDEFINED_P(PLUS, INTEGER)) {
++        opt_plus_count++;
+         return rb_fix_plus_fix(recv, obj);
+     }
+     else if (FLONUM_2_P(recv, obj) &&`),
+      diff("ruby/vm.c", `
+@@ -4779,6 +4779,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "opt_plus_count", vm_opt_plus_count, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".opt_plus_count" do
+    let(:a) { 1 }
+    let(:b) { 2 }
+
+    context "整数どうしを + で足したとき" do
+      it "1 増える" do
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x + y
+        expect(RubyVM.opt_plus_count - before).to eq(1)
+      end
+    end
+
+    context "send(:+) で呼んだとき" do
+      it "増えない" do
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x.send(:+, y)
+        expect(RubyVM.opt_plus_count - before).to eq(0)
+      end
+    end
+
+    context "Integer#+ を再定義したとき" do
+      it "増えない" do
+        Integer.prepend(Module.new { def +(other) = super })
+        x = a
+        y = b
+        before = RubyVM.opt_plus_count
+        x + y
+        expect(RubyVM.opt_plus_count - before).to eq(0)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "frame-depth",
+    title: "フレーム",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+def f(n) = n == 0 ? caller(0).size : f(n - 1)
+p f(0), f(3)
+p [1].map { caller(0).size }
+puts RubyVM::InstructionSequence.compile("def f(n) = n").disasm`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 3 - Frames and events（Kevin Newton）", url: "https://kddnewton.com/2022/12/03/advent-of-yarv-part-3.html" },
+      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
+    ],
+    task: [
+      p("呼び出し元のフレームより古いフレームの数を返す `RubyVM.frame_depth` を作る。"),
+      rb(`
+def f(n) = n == 0 ? RubyVM.frame_depth : f(n - 1)
+f(3) - f(0)                       #=> 3
+base = RubyVM.frame_depth
+[1].map { RubyVM.frame_depth - base } #=> [2]`),
+    ],
+    hints: [note("フレームは配列のように並んでいて、`RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)` は `cfp + 1` です。いちばん古いフレームの次は `RUBY_VM_END_CONTROL_FRAME(ec)` です。")],
+    answer: [
+      diff("ruby/vm.c", `
+@@ -710,6 +710,13 @@
+ 
+ #include "vm_exec.c"
+ 
++static VALUE
++vm_frame_depth(VALUE self)
++{
++    const rb_execution_context_t *ec = GET_EC();
++    return LONG2NUM(RUBY_VM_END_CONTROL_FRAME(ec) - RUBY_VM_PREVIOUS_CONTROL_FRAME(ec->cfp));
++}
++
+ #include "vm_method.c"
+ #include "vm_eval.c"
+ 
+@@ -4779,6 +4786,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "frame_depth", vm_frame_depth, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".frame_depth" do
+    def f(n) = n == 0 ? RubyVM.frame_depth : f(n - 1)
+
+    it "メソッドを 1 段呼ぶごとに 1 増える" do
+      expect(f(3) - f(0)).to eq(3)
+    end
+
+    it "ブロックの中では、map と ブロックの 2 つ増える" do
+      base = RubyVM.frame_depth
+      expect([1].map { RubyVM.frame_depth - base }).to eq([2])
+    end
+
+    it "同じフレームなら同じ値" do
+      expect(RubyVM.frame_depth).to eq(RubyVM.frame_depth)
+    end
+  end
+end`),
+  },
+  {
+    slug: "module-mixins",
+    title: "Module#mixins",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+module A; end
+module B; end
+
+class C
+  include A
+  prepend B
+end
+
+p C.ancestors`),
+      p("2. `class.c` の `rb_mod_ancestors` の `if (p != RCLASS_ORIGIN(p)) continue;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Better Know A Ruby Thing: Method Lookup（Noel Rappin）", url: "https://buttondown.com/noelrap/archive/better-know-a-ruby-thing-method-lookup" },
+      { title: "Module#prepend（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/prepend.html" },
+      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
+    ],
+    task: [
+      p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。"),
+      rb(`
+module A; end
+module B; end
+
+class C
+  include A
+  prepend B
+end
+
+C.ancestors #=> [B, C, A, Object, Kernel, BasicObject]
+C.mixins    #=> [B, A, Kernel]`),
+    ],
+    hints: [note("`ancestors` は `object.c` の `InitVM_Object` で登録されています。関数は `class.c` に書き、`object.c` で同じように登録してください。`object.c` には、`InitVM_Object` より前に関数の宣言が要ります。")],
+    answer: [
+      diff("ruby/class.c", `
+@@ -2154,6 +2154,20 @@
+  */
+ 
+ VALUE
++rb_mod_mixins(VALUE mod)
++{
++    VALUE p, ary = rb_ary_new();
++
++    for (p = mod; p; p = RCLASS_SUPER(p)) {
++        if (p != RCLASS_ORIGIN(p)) continue;
++        if (BUILTIN_TYPE(p) == T_ICLASS && RB_TYPE_P(METACLASS_OF(p), T_MODULE)) {
++            rb_ary_push(ary, METACLASS_OF(p));
++        }
++    }
++    return ary;
++}
++
++VALUE
+ rb_mod_ancestors(VALUE mod)
+ {
+     VALUE p, ary = rb_ary_new();`),
+      diff("ruby/object.c", `
+@@ -4403,6 +4403,8 @@
+  *
+  */
+ 
++VALUE rb_mod_mixins(VALUE mod);
++
+ void
+ InitVM_Object(void)
+ {
+@@ -4655,6 +4657,7 @@
+     rb_define_method(rb_cModule, "name", rb_mod_name, 0);  /* in variable.c */
+     rb_define_method(rb_cModule, "set_temporary_name", rb_mod_set_temporary_name, 1);  /* in variable.c */
+     rb_define_method(rb_cModule, "ancestors", rb_mod_ancestors, 0); /* in class.c */
++    rb_define_method(rb_cModule, "mixins", rb_mod_mixins, 0);
+     rb_define_method(rb_cModule, "descendants", rb_mod_descendants, 0); /* in class.c */
+ 
+     rb_define_method(rb_cModule, "attr", rb_mod_attr, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe Module do
+  describe "#mixins" do
+    context "include と prepend をしたとき" do
+      it "prepend したモジュールを先に返す" do
+        a = Module.new
+        b = Module.new
+        klass = Class.new { include a; prepend b }
+        expect(klass.mixins.first(2)).to eq([b, a])
+      end
+    end
+
+    context "BasicObject を直接継承したとき" do
+      it "空の配列を返す" do
+        expect(Class.new(BasicObject).mixins).to eq([])
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "cfunc-call",
+    title: "C の関数の呼び出し",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm
+puts RubyVM::InstructionSequence.compile("[1].size").disasm`),
+      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
+      rb(`
+p 1 + 2
+[1, 2].at(0)
+[1, 2].first
+[1].size
+"a".upcase`),
+      p("3. `main.rb` に次を書いて実行する。"),
+      rb(`p Array.instance_method(:first).source_location`),
+      p("4. `vm_insnhelper.c` の `vm_search_method_slowpath0` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
+      c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
+      rb(`3.times { [1, 2].at(0) }`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "Advent of YARV: Part 7 - Calling methods (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/07/advent-of-yarv-part-7.html" },
+      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
+      { title: "第 15 章「メソッド」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/method.html" },
+    ],
+    task: [
+      p("ブロックの中で、2 の行を通って呼ばれた C の関数のメソッド名を、順に配列で返す `RubyVM.cfunc_calls` を作る。"),
+      rb(`
+RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
+RubyVM.cfunc_calls { [1].size }                 #=> []`),
+    ],
+    hints: [
+      note("値を入れる配列は `vm.c` の静的変数にします。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`#include \"vm_insnhelper.c\"` より前で宣言すれば使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
+    ],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -3933,6 +3933,7 @@
+     if (len >= 0) rb_check_arity(argc, len, len);
+ 
+     reg_cfp->sp = stack_bottom;
++    if (!NIL_P(cfunc_log)) rb_ary_push(cfunc_log, ID2SYM(me->def->original_id));
+     val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);
+ 
+     CHECK_CFP_CONSISTENCY("vm_call_cfunc");`),
+      diff("ruby/vm.c", `
+@@ -706,8 +706,20 @@
+ 
+ static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
+ 
++static VALUE cfunc_log = Qnil;
++
+ #include "vm_insnhelper.c"
+ 
++static VALUE
++vm_cfunc_calls(VALUE self)
++{
++    VALUE log = rb_ary_new();
++    cfunc_log = log;
++    rb_yield(Qnil);
++    cfunc_log = Qnil;
++    return log;
++}
++
+ #include "vm_exec.c"
+ 
+ #include "vm_method.c"
+@@ -4779,6 +4791,8 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_gc_register_address(&cfunc_log);
++    rb_define_singleton_method(rb_cRubyVM, "cfunc_calls", vm_cfunc_calls, 0);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".cfunc_calls" do
+    it "C の関数で書かれたメソッドを順に返す" do
+      expect(RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase }).to eq([:at, :upcase])
+    end
+
+    it "Ruby で書かれたメソッドは返さない" do
+      expect(RubyVM.cfunc_calls { [1, 2].first }).to eq([])
+    end
+
+    it "特化命令で処理されたメソッドは返さない" do
+      expect(RubyVM.cfunc_calls { [1].size }).to eq([])
+    end
+
+    it "send で呼んだときは返す" do
+      expect(RubyVM.cfunc_calls { [1].send(:size) }).to eq([:size])
+    end
+  end
+end`),
+  },
+  {
+    slug: "attr-predicate",
+    title: "Module#attr_predicate",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class C
+  attr_reader :x
+  def y = @y
+end
+
+c = C.new
+TracePoint.new(:call, :c_call) { |tp| p [tp.event, tp.method_id] }.enable { c.x; c.y }`),
+    ],
+    refs: [
+      { title: "Understanding why attr_accessor in Ruby is faster than a regular method（Dmitry Tsepelev）", url: "https://dmitrytsepelev.dev/attr-accessor-in-ruby" },
+      { title: "Feature #19708: Support attr_reader :foo?（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19708" },
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+    ],
+    task: [
+      p("インスタンス変数の値を返す `名前?` のメソッドを定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。"),
+      rb(`
+class User
+  attr_predicate :admin, :guest #=> [:admin?, :guest?]
+
+  def initialize(admin)
+    @admin = admin
+  end
+end
+
+User.new(true).admin? #=> true
+User.new(true).guest? #=> nil`),
+    ],
+    hints: [note("`rb_add_method` は `method.h` で宣言されているので、`object.c` に `#include \"method.h\"` を足します。引数から ID を作るのは、`attr_reader` と同じく `id_for_attr` で書けます。登録は `InitVM_Object` で行うので、関数はそれより前に書いてください。")],
+    answer: [
+      diff("ruby/object.c", `
+@@ -4403,6 +4403,23 @@
+  *
+  */
+ 
++#include "method.h"
++
++static VALUE
++rb_mod_attr_predicate(int argc, VALUE *argv, VALUE klass)
++{
++    VALUE names = rb_ary_new2(argc);
++
++    for (int i = 0; i < argc; i++) {
++        ID id = id_for_attr(klass, argv[i]);
++        ID attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
++        ID pred = rb_intern_str(rb_sprintf("%"PRIsVALUE"?", rb_id2str(id)));
++        rb_add_method(klass, pred, VM_METHOD_TYPE_IVAR, (void *)attriv, METHOD_VISI_PUBLIC);
++        rb_ary_push(names, ID2SYM(pred));
++    }
++    return names;
++}
++
+ void
+ InitVM_Object(void)
+ {
+@@ -4661,6 +4678,7 @@
+     rb_define_method(rb_cModule, "attr_reader", rb_mod_attr_reader, -1);
+     rb_define_method(rb_cModule, "attr_writer", rb_mod_attr_writer, -1);
+     rb_define_method(rb_cModule, "attr_accessor", rb_mod_attr_accessor, -1);
++    rb_define_method(rb_cModule, "attr_predicate", rb_mod_attr_predicate, -1);
+ 
+     rb_define_alloc_func(rb_cModule, rb_module_s_alloc);
+     rb_undef_method(rb_singleton_class(rb_cModule), "allocate");`),
+    ],
+    spec: spec(`
+RSpec.describe Module do
+  describe "#attr_predicate" do
+    context "インスタンス変数が true のとき" do
+      it "true を返す" do
+        klass = Class.new do
+          attr_predicate :admin
+
+          def initialize
+            @admin = true
+          end
+        end
+        expect(klass.new.admin?).to be(true)
+      end
+    end
+
+    context "インスタンス変数を設定していないとき" do
+      it "nil を返す" do
+        klass = Class.new { attr_predicate :admin }
+        expect(klass.new.admin?).to be_nil
+      end
+    end
+
+    context "名前を 2 つ渡したとき" do
+      it "定義したメソッド名の配列を返す" do
+        names = nil
+        Class.new { names = attr_predicate(:admin, :guest) }
+        expect(names).to eq(%i[admin? guest?])
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "method-missing",
+    title: "method_missing",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class Foo
+  def method_missing(name, *args) = [name, args]
+end
+p Foo.new.bar(1, 2)
+
+begin; Object.new.bar; rescue NameError => e; p e; end
+begin; Object.new.puts; rescue NameError => e; p e; end
+begin; bar; rescue NameError => e; p e; end`),
+    ],
+    refs: [
+      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
+      { title: "BasicObject#method_missing（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/BasicObject/i/method_missing.html" },
+      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
+    ],
+    task: [
+      p("見つからないメソッドを呼んだときのメッセージの `undefined method` を `no such method` に変える。"),
+      rb(`
+Object.new.foo
+#=> no such method 'foo' for an instance of Object (NoMethodError)`),
+    ],
+    hints: [note("メッセージの書式は `vm_eval.c` にあります。")],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -978,7 +978,7 @@
+     VALUE name = argv[0];
+ 
+     if (!format) {
+-        format = rb_fstring_lit("undefined method '%1$s' for %3$s%4$s");
++        format = rb_fstring_lit("no such method '%1$s' for %3$s%4$s");
+     }
+     if (exc == rb_eNoMethodError) {
+         VALUE args = rb_ary_new4(argc - 1, argv + 1);`),
+    ],
+    spec: spec(`
+RSpec.describe NoMethodError do
+  describe "#message" do
+    context "見つからないメソッドを呼んだとき" do
+      it "no such method で始まる" do
+        expect { Object.new.foo }.to raise_error(NoMethodError, /\\Ano such method 'foo'/)
+      end
+    end
+
+    context "method_missing を定義したとき" do
+      it "例外にならず、method_missing が呼ばれる" do
+        klass = Class.new do
+          def method_missing(name, *) = name
+          def respond_to_missing?(*) = true
+        end
+        expect(klass.new.foo).to eq(:foo)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "kernel-try",
+    title: "Kernel#try",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+o = Object.new
+def o.respond_to_missing?(name, include_private)
+  puts "respond_to_missing? #{name}"
+  false
+end
+
+p [o].flatten
+p Array(o)`),
+    ],
+    refs: [
+      { title: "Bug #11465: Array#flatten calls to_ary on objects with method_missing even if respond_to_missing?(:to_ary) returns false（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/11465" },
+      { title: "Implicit Conversions（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/4.0/language/implicit_conversion_rdoc.html" },
+      { title: "Object#respond_to_missing?（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Object/i/respond_to_missing=3f.html" },
+    ],
+    task: [
+      p("メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。"),
+      rb(`
+"ruby".try(:upcase)      #=> "RUBY"
+1.try(:+, 2)             #=> 3
+nil.try(:no_such_method) #=> nil`),
+    ],
+    hints: [note("`vm_eval.c` の `rb_check_funcall(recv, mid, argc, argv)` は、呼べなければ `Qundef` を返します。`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -2967,6 +2967,14 @@
+     return (struct vm_ifunc *)ifunc;
+ }
+ 
++static VALUE
++rb_obj_try(int argc, VALUE *argv, VALUE self)
++{
++    rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
++    VALUE result = rb_check_funcall(self, rb_to_id(argv[0]), argc - 1, argv + 1);
++    return UNDEF_P(result) ? Qnil : result;
++}
++
+ void
+ Init_vm_eval(void)
+ {
+@@ -2992,6 +3000,7 @@
+     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
+ #endif
+     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
++    rb_define_method(rb_mKernel, "try", rb_obj_try, -1);
+ 
+     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
+     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe Kernel do
+  describe "#try" do
+    context "メソッドがあるとき" do
+      it "呼んだ結果を返す" do
+        expect("ruby".try(:upcase)).to eq("RUBY")
+      end
+    end
+
+    context "引数を渡したとき" do
+      it "引数ごと渡して呼ぶ" do
+        expect(1.try(:+, 2)).to eq(3)
+      end
+    end
+
+    context "メソッドがないとき" do
+      it "nil を返す" do
+        expect(nil.try(:no_such_method)).to be_nil
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "proc-kind",
+    title: "Proc#kind",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+pr = proc { |a, b| [a, b] }
+l = lambda { |a, b| [a, b] }
+p pr.lambda?, l.lambda?
+p pr.call(1)
+p l.call(1)`),
+      p("2. `proc.c` の `rb_proc_lambda_p` の `return` の行を `return Qtrue;` に変えて `make` し、1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
+      { title: "How Ruby Borrowed a Decades Old Idea From Lisp（Pat Shaughnessy）", url: "https://patshaughnessy.net/2012/9/18/how-ruby-borrowed-a-decades-old-idea-from-lisp" },
+      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+    ],
+    task: [
+      p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。"),
+      rb(`
+-> {}.kind                 #=> :lambda
+proc {}.kind               #=> :proc
+method(:puts).to_proc.kind #=> :lambda`),
+    ],
+    hints: [note("シンボルは `ID2SYM(rb_intern(\"lambda\"))` で作れます。登録は `Init_Proc` の `\"lambda?\"` の行の近くに書いてください。")],
+    answer: [
+      diff("ruby/proc.c", `
+@@ -5447,6 +5447,14 @@
+  *
+  */
+ 
++static VALUE
++proc_kind(VALUE self)
++{
++    rb_proc_t *proc;
++    GetProcPtr(self, proc);
++    return ID2SYM(rb_intern(proc->header.is_lambda ? "lambda" : "proc"));
++}
++
+ void
+ Init_Proc(void)
+ {
+@@ -5493,6 +5501,7 @@
+     rb_define_method(rb_cProc, "to_s", proc_to_s, 0);
+     rb_define_alias(rb_cProc, "inspect", "to_s");
+     rb_define_method(rb_cProc, "lambda?", rb_proc_lambda_p, 0);
++    rb_define_method(rb_cProc, "kind", proc_kind, 0);
+     rb_define_method(rb_cProc, "binding", proc_binding, 0);
+     rb_define_method(rb_cProc, "curry", proc_curry, -1);
+     rb_define_method(rb_cProc, "<<", proc_compose_to_left, 1);`),
+    ],
+    spec: spec(`
+RSpec.describe Proc do
+  describe "#kind" do
+    context "lambda のとき" do
+      it ":lambda を返す" do
+        expect(-> {}.kind).to eq(:lambda)
+      end
+    end
+
+    context "proc のとき" do
+      it ":proc を返す" do
+        expect(proc {}.kind).to eq(:proc)
+      end
+    end
+
+    context "Method#to_proc で作ったとき" do
+      it ":lambda を返す" do
+        expect(method(:puts).to_proc.kind).to eq(:lambda)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "block-splat",
+    title: "ブロック引数の自動展開",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+p [[1, 2]].map { |a, b| [a, b] }
+p [[1, 2]].map { |a| a }
+p [[1, 2]].map { |a, | a }
+p proc { |a, b| [a, b] }.call([1, 2])
+p((lambda { |a, b| [a, b] }.call([1, 2]) rescue $!))`),
+      p("2. `vm_insnhelper.c` の `vm_callee_setup_block_arg` で、`calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);` の前に次の行を足す。`make` し、1 と同じコードを実行する。どれで出力されるか。"),
+      c(`fprintf(stderr, "splat\\n");`),
+    ],
+    refs: [
+      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
+      { title: "Advent of YARV: Part 17 - Method parameters（Kevin Newton）", url: "https://kddnewton.com/2022/12/17/advent-of-yarv-part-17.html" },
+      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+    ],
+    task: [
+      p("`RubyVM.block_autosplat = false` の間だけ、ブロックの引数を自動で展開しない。"),
+      rb(`
+RubyVM.block_autosplat = false
+[[1, 2]].map { |a, b| [a, b] } #=> [[[1, 2], nil]]
+RubyVM.block_autosplat = true
+[[1, 2]].map { |a, b| [a, b] } #=> [[1, 2]]`),
+    ],
+    hints: [note("切り替えの値は `vm.c` の静的変数にします。`vm_insnhelper.c` から使うので、`#include \"vm_insnhelper.c\"` より前で宣言します。")],
+    answer: [
+      diff("ruby/vm_insnhelper.c", `
+@@ -5536,7 +5536,8 @@
+ 
+         CALLER_SETUP_ARG(cfp, calling, ci, ISEQ_BODY(iseq)->param.lead_num);
+ 
+-        if (arg_setup_type == arg_setup_block &&
++        if (block_autosplat &&
++            arg_setup_type == arg_setup_block &&
+             calling->argc == 1 &&
+             ISEQ_BODY(iseq)->param.flags.has_lead &&
+             !ISEQ_BODY(iseq)->param.flags.ambiguous_param0 &&`),
+      diff("ruby/vm.c", `
+@@ -706,10 +706,19 @@
+ 
+ static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
+ 
++static bool block_autosplat = true;
++
+ #include "vm_insnhelper.c"
+ 
+ #include "vm_exec.c"
+ 
++static VALUE
++vm_set_block_autosplat(VALUE self, VALUE flag)
++{
++    block_autosplat = RTEST(flag);
++    return flag;
++}
++
+ #include "vm_method.c"
+ #include "vm_eval.c"
+ 
+@@ -4779,6 +4788,7 @@
+      * This module is not portable between Ruby implementations.
+      */
+     rb_cRubyVM = rb_define_class("RubyVM", rb_cObject);
++    rb_define_singleton_method(rb_cRubyVM, "block_autosplat=", vm_set_block_autosplat, 1);
+     rb_undef_alloc_func(rb_cRubyVM);
+     rb_undef_method(CLASS_OF(rb_cRubyVM), "new");
+     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe RubyVM do
+  describe ".block_autosplat=" do
+    let(:pairs) { [[1, 2]] }
+
+    it "false の間は展開しない" do
+      RubyVM.block_autosplat = false
+      r = pairs.map { |a, b| [a, b] }
+      RubyVM.block_autosplat = true
+      expect(r).to eq([[[1, 2], nil]])
+    end
+
+    it "true に戻すと展開する" do
+      RubyVM.block_autosplat = false
+      RubyVM.block_autosplat = true
+      expect(pairs.map { |a, b| [a, b] }).to eq([[1, 2]])
+    end
+  end
+end`),
+  },
+  {
+    slug: "tap-eval",
+    title: "Kernel#tap_eval",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+x = 10
+o = Object.new
+p o.instance_exec { [equal?(o), x] }`),
+      p("2. `vm_eval.c` の `yield_under` の `new_captured.self = self;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Understanding instance exec in ruby（BigBinary）", url: "https://www.bigbinary.com/blog/understanding-instance-exec-in-ruby" },
+      { title: "第 17 章「動的評価」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/anyeval.html" },
+    ],
+    task: [
+      p("ブロックの中の `self` をレシーバにして実行し、レシーバを返す `Kernel#tap_eval` を作る。"),
+      rb(`
+[1, 2].tap_eval { push(3) } #=> [1, 2, 3]
+[1, 2].tap { push(3) }      #=> NoMethodError`),
+    ],
+    hints: [note("`instance_exec` の本体は `vm_eval.c` の `rb_obj_instance_exec` です。C の関数から呼ぶと、その関数に渡されたブロックがそのまま使われます。")],
+    answer: [
+      diff("ruby/vm_eval.c", `
+@@ -2967,6 +2967,13 @@
+     return (struct vm_ifunc *)ifunc;
+ }
+ 
++static VALUE
++rb_obj_tap_eval(VALUE self)
++{
++    rb_obj_instance_exec(1, &self, self);
++    return self;
++}
++
+ void
+ Init_vm_eval(void)
+ {
+@@ -2992,6 +2999,7 @@
+     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
+ #endif
+     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
++    rb_define_method(rb_mKernel, "tap_eval", rb_obj_tap_eval, 0);
+ 
+     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
+     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe Kernel do
+  describe "#tap_eval" do
+    context "ブロックの中で" do
+      it "self がレシーバになる" do
+        ary = [1, 2]
+        ary.tap_eval { push(3) }
+        expect(ary).to eq([1, 2, 3])
+      end
+    end
+
+    context "呼んだとき" do
+      it "レシーバを返す" do
+        ary = []
+        expect(ary.tap_eval {}).to equal(ary)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "define-method",
+    title: "Module#define_private_method",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+class Foo
+  private
+  def a = 1
+  define_method(:b) { 2 }
+end
+Foo.define_method(:c) { 3 }
+
+p Foo.private_method_defined?(:a)
+p Foo.private_method_defined?(:b)
+p Foo.private_method_defined?(:c)`),
+      p("2. `proc.c` の `rb_mod_define_method` の `scope_visi = CREF_SCOPE_VISI(cref);` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Bug #19749: Confirm correct behaviour when attaching private method with #define_method（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19749" },
+      { title: "Module#private（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/private.html" },
+      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
+    ],
+    task: [
+      p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
+      rb(`
+class Vault
+  define_private_method(:secret) { 42 } #=> :secret
+
+  def peek = secret
+end
+
+Vault.new.peek   #=> 42
+Vault.new.secret #=> NoMethodError`),
+    ],
+    hints: [note("`define_method` は `Init_Proc` で登録されています。")],
+    answer: [
+      diff("ruby/proc.c", `
+@@ -5447,6 +5447,13 @@
+  *
+  */
+ 
++static VALUE
++rb_mod_define_private_method(int argc, VALUE *argv, VALUE mod)
++{
++    const rb_scope_visibility_t scope_visi = {METHOD_VISI_PRIVATE, FALSE};
++    return rb_mod_define_method_with_visibility(argc, argv, mod, &scope_visi);
++}
++
+ void
+ Init_Proc(void)
+ {
+@@ -5576,6 +5583,7 @@
+     rb_define_method(rb_cModule, "instance_method", rb_mod_instance_method, 1);
+     rb_define_method(rb_cModule, "public_instance_method", rb_mod_public_instance_method, 1);
+     rb_define_method(rb_cModule, "define_method", rb_mod_define_method, -1);
++    rb_define_method(rb_cModule, "define_private_method", rb_mod_define_private_method, -1);
+ 
+     /* Kernel */
+     rb_define_method(rb_mKernel, "define_singleton_method", rb_obj_define_method, -1);`),
+    ],
+    spec: spec(`
+RSpec.describe Module do
+  describe "#define_private_method" do
+    context "ブロックを渡したとき" do
+      it "private のメソッドを定義する" do
+        klass = Class.new { define_private_method(:secret) { 42 } }
+        expect(klass.private_method_defined?(:secret)).to be(true)
+      end
+    end
+
+    context "定義したメソッドを外から呼んだとき" do
+      it "NoMethodError になる" do
+        klass = Class.new { define_private_method(:secret) { 42 } }
+        expect { klass.new.secret }.to raise_error(NoMethodError)
+      end
+    end
+
+    context "定義したとき" do
+      it "メソッド名のシンボルを返す" do
+        name = nil
+        Class.new { name = define_private_method(:secret) { 42 } }
+        expect(name).to eq(:secret)
+      end
+    end
+  end
+end`),
+  },
+  {
+    slug: "bmethod-proc",
+    title: "define_method と lambda",
+    body: [
+      p("1. `main.rb` に次を書いて実行する。"),
+      rb(`
+pr = proc { |a, b| [a, b] }
+p pr.call(1)
+
+class Foo; end
+Foo.define_method(:m, pr)
+p Foo.new.m(1)`),
+      p("2. `proc.c` の `rb_mod_define_method_with_visibility` の `proc->header.is_lambda = TRUE;` の行を消し、`make` して 1 と同じコードを実行する。"),
+    ],
+    refs: [
+      { title: "Feature #16499: define_method(non_lambda) should not change the semantics of the given Proc（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/16499" },
+      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
+      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+    ],
+    task: [
+      p("ブロックで定義したメソッドを proc として扱い、足りない引数を `nil` で埋めるようにする。lambda を渡したときは、今まで通り引数の数を確かめる。"),
+      rb(`
+class Foo
+  define_method(:pair) { |a, b| [a, b] }
+  define_method(:strict, ->(a, b) { [a, b] })
+end
+
+Foo.new.pair(1)   #=> [1, nil]
+Foo.new.strict(1) #=> ArgumentError`),
+    ],
+    hints: [note("`vm_call_iseq_bmethod` は lambda のときだけ使うようにします。proc のときは `vm_call_noniseq_bmethod` から `vm_invoke_bmethod` に進むので、そこで proc の `is_lambda` を渡します。")],
+    answer: [
+      diff("ruby/proc.c", `
+@@ -3156,7 +3156,7 @@
+     name = argv[0];
+     id = rb_check_id(&name);
+     if (argc == 1) {
+-        body = rb_block_lambda();
++        body = rb_block_proc();
+     }
+     else {
+         body = argv[1];
+@@ -3208,7 +3208,6 @@
+         if (vm_proc_iseq(procval) != NULL) {
+             rb_proc_t *proc;
+             GetProcPtr(procval, proc);
+-            proc->header.is_lambda = TRUE;
+             proc->header.is_from_method = TRUE;
+         }
+         rb_add_method(mod, id, VM_METHOD_TYPE_BMETHOD, (void *)procval, scope_visi->method_visi);`),
+      diff("ruby/vm_insnhelper.c", `
+@@ -4278,7 +4278,7 @@
+     while (vm_block_type(block) == block_type_proc) {
+         block = vm_proc_block(block->as.proc);
+     }
+-    if (vm_block_type(block) == block_type_iseq) {
++    if (vm_block_type(block) == block_type_iseq && proc->header.is_lambda) {
+         CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);
+         return vm_call_iseq_bmethod(ec, cfp, calling);
+     }`),
+      diff("ruby/vm.c", `
+@@ -2059,7 +2059,7 @@
+                      int argc, const VALUE *argv, int kw_splat, VALUE block_handler, const rb_callable_method_entry_t *me)
+ {
+     /* bmethod procs never carry a refinement cref (Proc#refined rejects them) */
+-    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, TRUE, NULL, me);
++    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, proc->header.is_lambda, NULL, me);
+ }
+ 
+ VALUE`),
+    ],
+    spec: spec(`
+RSpec.describe Module do
+  describe "#define_method" do
+    context "ブロックを渡したとき" do
+      it "足りない引数を nil で埋める" do
+        klass = Class.new { define_method(:pair) { |a, b| [a, b] } }
+        expect(klass.new.pair(1)).to eq([1, nil])
+      end
+    end
+
+    context "lambda を渡したとき" do
+      it "引数の数が違うと ArgumentError になる" do
+        klass = Class.new { define_method(:pair, ->(a, b) { [a, b] }) }
+        expect { klass.new.pair(1) }.to raise_error(ArgumentError)
+      end
     end
   end
 end`),
@@ -1283,664 +2753,6 @@ RSpec.describe Object do
     context "文字列や普通のオブジェクトのとき" do
       it "false を返す" do
         expect(["str", Object.new].map(&:immediate?)).to all(be(false))
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "proc-kind",
-    title: "Proc#kind",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-pr = proc { |a, b| [a, b] }
-l = lambda { |a, b| [a, b] }
-p pr.lambda?, l.lambda?
-p pr.call(1)
-p l.call(1)`),
-      p("2. `proc.c` の `rb_proc_lambda_p` の `return` の行を `return Qtrue;` に変えて `make` し、1 と同じコードを実行する。"),
-    ],
-    refs: [
-      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
-      { title: "How Ruby Borrowed a Decades Old Idea From Lisp（Pat Shaughnessy）", url: "https://patshaughnessy.net/2012/9/18/how-ruby-borrowed-a-decades-old-idea-from-lisp" },
-      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
-    ],
-    task: [
-      p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。"),
-      rb(`
--> {}.kind                 #=> :lambda
-proc {}.kind               #=> :proc
-method(:puts).to_proc.kind #=> :lambda`),
-    ],
-    hints: [note("シンボルは `ID2SYM(rb_intern(\"lambda\"))` で作れます。登録は `Init_Proc` の `\"lambda?\"` の行の近くに書いてください。")],
-    answer: [
-      diff("ruby/proc.c", `
-@@ -5447,6 +5447,14 @@
-  *
-  */
- 
-+static VALUE
-+proc_kind(VALUE self)
-+{
-+    rb_proc_t *proc;
-+    GetProcPtr(self, proc);
-+    return ID2SYM(rb_intern(proc->header.is_lambda ? "lambda" : "proc"));
-+}
-+
- void
- Init_Proc(void)
- {
-@@ -5493,6 +5501,7 @@
-     rb_define_method(rb_cProc, "to_s", proc_to_s, 0);
-     rb_define_alias(rb_cProc, "inspect", "to_s");
-     rb_define_method(rb_cProc, "lambda?", rb_proc_lambda_p, 0);
-+    rb_define_method(rb_cProc, "kind", proc_kind, 0);
-     rb_define_method(rb_cProc, "binding", proc_binding, 0);
-     rb_define_method(rb_cProc, "curry", proc_curry, -1);
-     rb_define_method(rb_cProc, "<<", proc_compose_to_left, 1);`),
-    ],
-    spec: spec(`
-RSpec.describe Proc do
-  describe "#kind" do
-    context "lambda のとき" do
-      it ":lambda を返す" do
-        expect(-> {}.kind).to eq(:lambda)
-      end
-    end
-
-    context "proc のとき" do
-      it ":proc を返す" do
-        expect(proc {}.kind).to eq(:proc)
-      end
-    end
-
-    context "Method#to_proc で作ったとき" do
-      it ":lambda を返す" do
-        expect(method(:puts).to_proc.kind).to eq(:lambda)
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "define-method",
-    title: "Module#define_private_method",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-class Foo
-  private
-  def a = 1
-  define_method(:b) { 2 }
-end
-Foo.define_method(:c) { 3 }
-
-p Foo.private_method_defined?(:a)
-p Foo.private_method_defined?(:b)
-p Foo.private_method_defined?(:c)`),
-      p("2. `proc.c` の `rb_mod_define_method` の `scope_visi = CREF_SCOPE_VISI(cref);` の行を消し、`make` して 1 と同じコードを実行する。"),
-    ],
-    refs: [
-      { title: "Bug #19749: Confirm correct behaviour when attaching private method with #define_method（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19749" },
-      { title: "Module#private（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/private.html" },
-      { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
-    ],
-    task: [
-      p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
-      rb(`
-class Vault
-  define_private_method(:secret) { 42 } #=> :secret
-
-  def peek = secret
-end
-
-Vault.new.peek   #=> 42
-Vault.new.secret #=> NoMethodError`),
-    ],
-    hints: [note("`define_method` は `Init_Proc` で登録されています。")],
-    answer: [
-      diff("ruby/proc.c", `
-@@ -5447,6 +5447,13 @@
-  *
-  */
- 
-+static VALUE
-+rb_mod_define_private_method(int argc, VALUE *argv, VALUE mod)
-+{
-+    const rb_scope_visibility_t scope_visi = {METHOD_VISI_PRIVATE, FALSE};
-+    return rb_mod_define_method_with_visibility(argc, argv, mod, &scope_visi);
-+}
-+
- void
- Init_Proc(void)
- {
-@@ -5576,6 +5583,7 @@
-     rb_define_method(rb_cModule, "instance_method", rb_mod_instance_method, 1);
-     rb_define_method(rb_cModule, "public_instance_method", rb_mod_public_instance_method, 1);
-     rb_define_method(rb_cModule, "define_method", rb_mod_define_method, -1);
-+    rb_define_method(rb_cModule, "define_private_method", rb_mod_define_private_method, -1);
- 
-     /* Kernel */
-     rb_define_method(rb_mKernel, "define_singleton_method", rb_obj_define_method, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe Module do
-  describe "#define_private_method" do
-    context "ブロックを渡したとき" do
-      it "private のメソッドを定義する" do
-        klass = Class.new { define_private_method(:secret) { 42 } }
-        expect(klass.private_method_defined?(:secret)).to be(true)
-      end
-    end
-
-    context "定義したメソッドを外から呼んだとき" do
-      it "NoMethodError になる" do
-        klass = Class.new { define_private_method(:secret) { 42 } }
-        expect { klass.new.secret }.to raise_error(NoMethodError)
-      end
-    end
-
-    context "定義したとき" do
-      it "メソッド名のシンボルを返す" do
-        name = nil
-        Class.new { name = define_private_method(:secret) { 42 } }
-        expect(name).to eq(:secret)
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "module-mixins",
-    title: "Module#mixins",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-module A; end
-module B; end
-
-class C
-  include A
-  prepend B
-end
-
-p C.ancestors`),
-      p("2. `class.c` の `rb_mod_ancestors` の `if (p != RCLASS_ORIGIN(p)) continue;` の行を消し、`make` して 1 と同じコードを実行する。"),
-    ],
-    refs: [
-      { title: "Better Know A Ruby Thing: Method Lookup（Noel Rappin）", url: "https://buttondown.com/noelrap/archive/better-know-a-ruby-thing-method-lookup" },
-      { title: "Module#prepend（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Module/i/prepend.html" },
-      { title: "第 4 章「クラス」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/class.html" },
-    ],
-    task: [
-      p("`ancestors` のうちモジュールだけを、同じ順に返す `Module#mixins` を作る。"),
-      rb(`
-module A; end
-module B; end
-
-class C
-  include A
-  prepend B
-end
-
-C.ancestors #=> [B, C, A, Object, Kernel, BasicObject]
-C.mixins    #=> [B, A, Kernel]`),
-    ],
-    hints: [note("`ancestors` は `object.c` の `InitVM_Object` で登録されています。関数は `class.c` に書き、`object.c` で同じように登録してください。`object.c` には、`InitVM_Object` より前に関数の宣言が要ります。")],
-    answer: [
-      diff("ruby/class.c", `
-@@ -2154,6 +2154,20 @@
-  */
- 
- VALUE
-+rb_mod_mixins(VALUE mod)
-+{
-+    VALUE p, ary = rb_ary_new();
-+
-+    for (p = mod; p; p = RCLASS_SUPER(p)) {
-+        if (p != RCLASS_ORIGIN(p)) continue;
-+        if (BUILTIN_TYPE(p) == T_ICLASS && RB_TYPE_P(METACLASS_OF(p), T_MODULE)) {
-+            rb_ary_push(ary, METACLASS_OF(p));
-+        }
-+    }
-+    return ary;
-+}
-+
-+VALUE
- rb_mod_ancestors(VALUE mod)
- {
-     VALUE p, ary = rb_ary_new();`),
-      diff("ruby/object.c", `
-@@ -4403,6 +4403,8 @@
-  *
-  */
- 
-+VALUE rb_mod_mixins(VALUE mod);
-+
- void
- InitVM_Object(void)
- {
-@@ -4655,6 +4657,7 @@
-     rb_define_method(rb_cModule, "name", rb_mod_name, 0);  /* in variable.c */
-     rb_define_method(rb_cModule, "set_temporary_name", rb_mod_set_temporary_name, 1);  /* in variable.c */
-     rb_define_method(rb_cModule, "ancestors", rb_mod_ancestors, 0); /* in class.c */
-+    rb_define_method(rb_cModule, "mixins", rb_mod_mixins, 0);
-     rb_define_method(rb_cModule, "descendants", rb_mod_descendants, 0); /* in class.c */
- 
-     rb_define_method(rb_cModule, "attr", rb_mod_attr, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe Module do
-  describe "#mixins" do
-    context "include と prepend をしたとき" do
-      it "prepend したモジュールを先に返す" do
-        a = Module.new
-        b = Module.new
-        klass = Class.new { include a; prepend b }
-        expect(klass.mixins.first(2)).to eq([b, a])
-      end
-    end
-
-    context "BasicObject を直接継承したとき" do
-      it "空の配列を返す" do
-        expect(Class.new(BasicObject).mixins).to eq([])
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "attr-predicate",
-    title: "Module#attr_predicate",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-class C
-  attr_reader :x
-  def y = @y
-end
-
-c = C.new
-TracePoint.new(:call, :c_call) { |tp| p [tp.event, tp.method_id] }.enable { c.x; c.y }`),
-    ],
-    refs: [
-      { title: "Understanding why attr_accessor in Ruby is faster than a regular method（Dmitry Tsepelev）", url: "https://dmitrytsepelev.dev/attr-accessor-in-ruby" },
-      { title: "Feature #19708: Support attr_reader :foo?（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19708" },
-      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
-    ],
-    task: [
-      p("インスタンス変数の値を返す `名前?` のメソッドを定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。"),
-      rb(`
-class User
-  attr_predicate :admin, :guest #=> [:admin?, :guest?]
-
-  def initialize(admin)
-    @admin = admin
-  end
-end
-
-User.new(true).admin? #=> true
-User.new(true).guest? #=> nil`),
-    ],
-    hints: [note("`rb_add_method` は `method.h` で宣言されているので、`object.c` に `#include \"method.h\"` を足します。引数から ID を作るのは、`attr_reader` と同じく `id_for_attr` で書けます。登録は `InitVM_Object` で行うので、関数はそれより前に書いてください。")],
-    answer: [
-      diff("ruby/object.c", `
-@@ -4403,6 +4403,23 @@
-  *
-  */
- 
-+#include "method.h"
-+
-+static VALUE
-+rb_mod_attr_predicate(int argc, VALUE *argv, VALUE klass)
-+{
-+    VALUE names = rb_ary_new2(argc);
-+
-+    for (int i = 0; i < argc; i++) {
-+        ID id = id_for_attr(klass, argv[i]);
-+        ID attriv = rb_intern_str(rb_sprintf("@%"PRIsVALUE, rb_id2str(id)));
-+        ID pred = rb_intern_str(rb_sprintf("%"PRIsVALUE"?", rb_id2str(id)));
-+        rb_add_method(klass, pred, VM_METHOD_TYPE_IVAR, (void *)attriv, METHOD_VISI_PUBLIC);
-+        rb_ary_push(names, ID2SYM(pred));
-+    }
-+    return names;
-+}
-+
- void
- InitVM_Object(void)
- {
-@@ -4661,6 +4678,7 @@
-     rb_define_method(rb_cModule, "attr_reader", rb_mod_attr_reader, -1);
-     rb_define_method(rb_cModule, "attr_writer", rb_mod_attr_writer, -1);
-     rb_define_method(rb_cModule, "attr_accessor", rb_mod_attr_accessor, -1);
-+    rb_define_method(rb_cModule, "attr_predicate", rb_mod_attr_predicate, -1);
- 
-     rb_define_alloc_func(rb_cModule, rb_module_s_alloc);
-     rb_undef_method(rb_singleton_class(rb_cModule), "allocate");`),
-    ],
-    spec: spec(`
-RSpec.describe Module do
-  describe "#attr_predicate" do
-    context "インスタンス変数が true のとき" do
-      it "true を返す" do
-        klass = Class.new do
-          attr_predicate :admin
-
-          def initialize
-            @admin = true
-          end
-        end
-        expect(klass.new.admin?).to be(true)
-      end
-    end
-
-    context "インスタンス変数を設定していないとき" do
-      it "nil を返す" do
-        klass = Class.new { attr_predicate :admin }
-        expect(klass.new.admin?).to be_nil
-      end
-    end
-
-    context "名前を 2 つ渡したとき" do
-      it "定義したメソッド名の配列を返す" do
-        names = nil
-        Class.new { names = attr_predicate(:admin, :guest) }
-        expect(names).to eq(%i[admin? guest?])
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "kernel-try",
-    title: "Kernel#try",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-o = Object.new
-def o.respond_to_missing?(name, include_private)
-  puts "respond_to_missing? #{name}"
-  false
-end
-
-p [o].flatten
-p Array(o)`),
-    ],
-    refs: [
-      { title: "Bug #11465: Array#flatten calls to_ary on objects with method_missing even if respond_to_missing?(:to_ary) returns false（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/11465" },
-      { title: "Implicit Conversions（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/4.0/language/implicit_conversion_rdoc.html" },
-      { title: "Object#respond_to_missing?（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/Object/i/respond_to_missing=3f.html" },
-    ],
-    task: [
-      p("メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。"),
-      rb(`
-"ruby".try(:upcase)      #=> "RUBY"
-1.try(:+, 2)             #=> 3
-nil.try(:no_such_method) #=> nil`),
-    ],
-    hints: [note("`vm_eval.c` の `rb_check_funcall(recv, mid, argc, argv)` は、呼べなければ `Qundef` を返します。`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
-    answer: [
-      diff("ruby/vm_eval.c", `
-@@ -2967,6 +2967,14 @@
-     return (struct vm_ifunc *)ifunc;
- }
- 
-+static VALUE
-+rb_obj_try(int argc, VALUE *argv, VALUE self)
-+{
-+    rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
-+    VALUE result = rb_check_funcall(self, rb_to_id(argv[0]), argc - 1, argv + 1);
-+    return UNDEF_P(result) ? Qnil : result;
-+}
-+
- void
- Init_vm_eval(void)
- {
-@@ -2992,6 +3000,7 @@
-     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
- #endif
-     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
-+    rb_define_method(rb_mKernel, "try", rb_obj_try, -1);
- 
-     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
-     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe Kernel do
-  describe "#try" do
-    context "メソッドがあるとき" do
-      it "呼んだ結果を返す" do
-        expect("ruby".try(:upcase)).to eq("RUBY")
-      end
-    end
-
-    context "引数を渡したとき" do
-      it "引数ごと渡して呼ぶ" do
-        expect(1.try(:+, 2)).to eq(3)
-      end
-    end
-
-    context "メソッドがないとき" do
-      it "nil を返す" do
-        expect(nil.try(:no_such_method)).to be_nil
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "tap-eval",
-    title: "Kernel#tap_eval",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-x = 10
-o = Object.new
-p o.instance_exec { [equal?(o), x] }`),
-      p("2. `vm_eval.c` の `yield_under` の `new_captured.self = self;` の行を消し、`make` して 1 と同じコードを実行する。"),
-    ],
-    refs: [
-      { title: "Understanding instance exec in ruby（BigBinary）", url: "https://www.bigbinary.com/blog/understanding-instance-exec-in-ruby" },
-      { title: "第 17 章「動的評価」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/anyeval.html" },
-    ],
-    task: [
-      p("ブロックの中の `self` をレシーバにして実行し、レシーバを返す `Kernel#tap_eval` を作る。"),
-      rb(`
-[1, 2].tap_eval { push(3) } #=> [1, 2, 3]
-[1, 2].tap { push(3) }      #=> NoMethodError`),
-    ],
-    hints: [note("`instance_exec` の本体は `vm_eval.c` の `rb_obj_instance_exec` です。C の関数から呼ぶと、その関数に渡されたブロックがそのまま使われます。")],
-    answer: [
-      diff("ruby/vm_eval.c", `
-@@ -2967,6 +2967,13 @@
-     return (struct vm_ifunc *)ifunc;
- }
- 
-+static VALUE
-+rb_obj_tap_eval(VALUE self)
-+{
-+    rb_obj_instance_exec(1, &self, self);
-+    return self;
-+}
-+
- void
- Init_vm_eval(void)
- {
-@@ -2992,6 +2999,7 @@
-     rb_define_method(rb_mKernel, "send", rb_f_send, -1);
- #endif
-     rb_define_method(rb_mKernel, "public_send", rb_f_public_send, -1);
-+    rb_define_method(rb_mKernel, "tap_eval", rb_obj_tap_eval, 0);
- 
-     rb_define_method(rb_cModule, "module_exec", rb_mod_module_exec_internal, -1);
-     rb_define_method(rb_cModule, "class_exec", rb_mod_module_exec_internal, -1);`),
-    ],
-    spec: spec(`
-RSpec.describe Kernel do
-  describe "#tap_eval" do
-    context "ブロックの中で" do
-      it "self がレシーバになる" do
-        ary = [1, 2]
-        ary.tap_eval { push(3) }
-        expect(ary).to eq([1, 2, 3])
-      end
-    end
-
-    context "呼んだとき" do
-      it "レシーバを返す" do
-        ary = []
-        expect(ary.tap_eval {}).to equal(ary)
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "method-missing",
-    title: "method_missing",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-class Foo
-  def method_missing(name, *args) = [name, args]
-end
-p Foo.new.bar(1, 2)
-
-begin; Object.new.bar; rescue NameError => e; p e; end
-begin; Object.new.puts; rescue NameError => e; p e; end
-begin; bar; rescue NameError => e; p e; end`),
-    ],
-    refs: [
-      { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
-      { title: "BasicObject#method_missing（るりま）", url: "https://docs.ruby-lang.org/ja/latest/method/BasicObject/i/method_missing.html" },
-      { title: "YARV Maniacs 【第 6 回】 YARV 命令セット (3) メソッドディスパッチ（るびま）", url: "https://magazine.rubyist.net/articles/0012/0012-YarvManiacs.html" },
-    ],
-    task: [
-      p("見つからないメソッドを呼んだときのメッセージの `undefined method` を `no such method` に変える。"),
-      rb(`
-Object.new.foo
-#=> no such method 'foo' for an instance of Object (NoMethodError)`),
-    ],
-    hints: [note("メッセージの書式は `vm_eval.c` にあります。")],
-    answer: [
-      diff("ruby/vm_eval.c", `
-@@ -978,7 +978,7 @@
-     VALUE name = argv[0];
- 
-     if (!format) {
--        format = rb_fstring_lit("undefined method '%1$s' for %3$s%4$s");
-+        format = rb_fstring_lit("no such method '%1$s' for %3$s%4$s");
-     }
-     if (exc == rb_eNoMethodError) {
-         VALUE args = rb_ary_new4(argc - 1, argv + 1);`),
-    ],
-    spec: spec(`
-RSpec.describe NoMethodError do
-  describe "#message" do
-    context "見つからないメソッドを呼んだとき" do
-      it "no such method で始まる" do
-        expect { Object.new.foo }.to raise_error(NoMethodError, /\\Ano such method 'foo'/)
-      end
-    end
-
-    context "method_missing を定義したとき" do
-      it "例外にならず、method_missing が呼ばれる" do
-        klass = Class.new do
-          def method_missing(name, *) = name
-          def respond_to_missing?(*) = true
-        end
-        expect(klass.new.foo).to eq(:foo)
-      end
-    end
-  end
-end`),
-  },
-  {
-    slug: "bmethod-proc",
-    title: "define_method と lambda",
-    body: [
-      p("1. `main.rb` に次を書いて実行する。"),
-      rb(`
-pr = proc { |a, b| [a, b] }
-p pr.call(1)
-
-class Foo; end
-Foo.define_method(:m, pr)
-p Foo.new.m(1)`),
-      p("2. `proc.c` の `rb_mod_define_method_with_visibility` の `proc->header.is_lambda = TRUE;` の行を消し、`make` して 1 と同じコードを実行する。"),
-    ],
-    refs: [
-      { title: "Feature #16499: define_method(non_lambda) should not change the semantics of the given Proc（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/16499" },
-      { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
-      { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
-    ],
-    task: [
-      p("ブロックで定義したメソッドを proc として扱い、足りない引数を `nil` で埋めるようにする。lambda を渡したときは、今まで通り引数の数を確かめる。"),
-      rb(`
-class Foo
-  define_method(:pair) { |a, b| [a, b] }
-  define_method(:strict, ->(a, b) { [a, b] })
-end
-
-Foo.new.pair(1)   #=> [1, nil]
-Foo.new.strict(1) #=> ArgumentError`),
-    ],
-    hints: [note("`vm_call_iseq_bmethod` は lambda のときだけ使うようにします。proc のときは `vm_call_noniseq_bmethod` から `vm_invoke_bmethod` に進むので、そこで proc の `is_lambda` を渡します。")],
-    answer: [
-      diff("ruby/proc.c", `
-@@ -3156,7 +3156,7 @@
-     name = argv[0];
-     id = rb_check_id(&name);
-     if (argc == 1) {
--        body = rb_block_lambda();
-+        body = rb_block_proc();
-     }
-     else {
-         body = argv[1];
-@@ -3208,7 +3208,6 @@
-         if (vm_proc_iseq(procval) != NULL) {
-             rb_proc_t *proc;
-             GetProcPtr(procval, proc);
--            proc->header.is_lambda = TRUE;
-             proc->header.is_from_method = TRUE;
-         }
-         rb_add_method(mod, id, VM_METHOD_TYPE_BMETHOD, (void *)procval, scope_visi->method_visi);`),
-      diff("ruby/vm_insnhelper.c", `
-@@ -4278,7 +4278,7 @@
-     while (vm_block_type(block) == block_type_proc) {
-         block = vm_proc_block(block->as.proc);
-     }
--    if (vm_block_type(block) == block_type_iseq) {
-+    if (vm_block_type(block) == block_type_iseq && proc->header.is_lambda) {
-         CC_SET_FASTPATH(cc, vm_call_iseq_bmethod, TRUE);
-         return vm_call_iseq_bmethod(ec, cfp, calling);
-     }`),
-      diff("ruby/vm.c", `
-@@ -2059,7 +2059,7 @@
-                      int argc, const VALUE *argv, int kw_splat, VALUE block_handler, const rb_callable_method_entry_t *me)
- {
-     /* bmethod procs never carry a refinement cref (Proc#refined rejects them) */
--    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, TRUE, NULL, me);
-+    return invoke_block_from_c_proc(ec, proc, self, argc, argv, kw_splat, block_handler, proc->header.is_lambda, NULL, me);
- }
- 
- VALUE`),
-    ],
-    spec: spec(`
-RSpec.describe Module do
-  describe "#define_method" do
-    context "ブロックを渡したとき" do
-      it "足りない引数を nil で埋める" do
-        klass = Class.new { define_method(:pair) { |a, b| [a, b] } }
-        expect(klass.new.pair(1)).to eq([1, nil])
-      end
-    end
-
-    context "lambda を渡したとき" do
-      it "引数の数が違うと ArgumentError になる" do
-        klass = Class.new { define_method(:pair, ->(a, b) { [a, b] }) }
-        expect { klass.new.pair(1) }.to raise_error(ArgumentError)
       end
     end
   end

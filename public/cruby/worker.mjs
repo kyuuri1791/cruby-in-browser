@@ -173,14 +173,26 @@ function borrowWorker() {
   }
   if (w) {
     w.busy = true;
+    clearTimeout(w.idleTimer);
     return Promise.resolve(w);
   }
   return new Promise((r) => toolWaiting.push(r));
 }
+// 使われない Worker は止めてメモリを返す（clang は 1 つで数百 MB 使う）。1 つだけは残して、次の make を速くする
+const TOOL_IDLE_MS = 60_000;
 function giveBack(w) {
   const next = toolWaiting.shift();
-  if (next) next(w);
-  else w.busy = false;
+  if (next) {
+    next(w);
+    return;
+  }
+  w.busy = false;
+  clearTimeout(w.idleTimer);
+  w.idleTimer = setTimeout(() => {
+    if (w.busy || toolWorkers.length <= 1) return;
+    toolWorkers.splice(toolWorkers.indexOf(w), 1);
+    w.worker.terminate();
+  }, TOOL_IDLE_MS);
 }
 async function callTool(msg, onMessage, transfer = []) {
   const w = await borrowWorker();
@@ -318,8 +330,8 @@ self.onmessage = async ({ data }) => {
     // 最初の実行を速くするため、先に素材を読み込んでおく（失敗したら、実行のときにエラーを出す）
     const m = await loadManifest().catch(() => null);
     if (m) await Promise.all([initVfs(), loadRubyFs(), compileUrl('ruby.wasm'), ...m.libs.map((l) => compileUrl(`lib/${l}`)), ...m.editLibs.map(({ name }) => compileUrl(name))]).catch(() => {});
-    // make を速くするため、clang を動かす Worker も作って clang を読み込んでおく
-    await Promise.all(Array.from({ length: TOOL_WORKERS }, () => callTool({ tool: 'warmup' }).catch(() => {})));
+    // 最初の make を速くするため、clang を動かす Worker を 1 つ作って clang を読み込んでおく（残りは make のときに作る）
+    await callTool({ tool: 'warmup' }).catch(() => {});
     return;
   }
   if (data.type === 'stat') {
