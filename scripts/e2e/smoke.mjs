@@ -150,7 +150,9 @@ await h.click('make');
 const makeMs = Date.now() - t;
 t = Date.now();
 await h.click('./ruby main.rb');
-r.expect(`make（array.c を作り直してリンク）が 8 秒以内 (${makeMs}ms)`, makeMs < 8000);
+// 手元の目安は 8 秒。CI のマシンは遅いので、環境変数 MAKE_LIMIT_MS で緩める
+const makeLimit = Number(process.env.MAKE_LIMIT_MS ?? 8000);
+r.expect(`make（array.c を作り直してリンク）が ${makeLimit / 1000} 秒以内 (${makeMs}ms)`, makeMs < makeLimit);
 r.expect(`無限ループは 10 秒で止まる (${Date.now() - t}ms)`, (await h.out()).trimEnd().endsWith('Killed (time limit: 10s)') && Date.now() - t < 12000, (await h.out()).slice(-200));
 r.expect('止めるボタンがない', !(await page.$('button.stop')));
 await h.replaceText('p 6 * 7\nputs __FILE__\nraise "oops"');

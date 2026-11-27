@@ -29,6 +29,8 @@ jobs:
         run: node scripts/e2e/smoke.mjs http://127.0.0.1:3000
         env:
           CHROME_PATH: /usr/bin/google-chrome
+          # GitHub のランナーは手元より遅い（array.c の make が約 9 秒かかった）
+          MAKE_LIMIT_MS: 20000
       - name: 全課題の解答例
         run: node scripts/e2e/answers.mjs http://127.0.0.1:3000
         env:
