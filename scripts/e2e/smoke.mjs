@@ -79,7 +79,7 @@ await h.click('make');
 await h.click('bin/rspec');
 out = await h.out();
 r.expect('make で wasm-ld の「not yet stable」の警告が出ない', !out.includes('not yet stable'), out);
-r.expect(`array: spec が通る (${Date.now() - t}ms)`, out.includes('$ bin/rspec spec/30_spec.rb') && out.includes('3 examples, 0 failures') && out.includes('  #second'), out);
+r.expect(`array: spec が通る (${Date.now() - t}ms)`, out.includes('$ bin/rspec spec/27_spec.rb') && out.includes('3 examples, 0 failures') && out.includes('  #second'), out);
 await h.open('libruby-edit.so');
 info = await page.$eval('.binary-info', (e) => e.innerText);
 r.expect('libruby-edit.so の情報', /^WebAssembly 共有ライブラリ・[\d,]+ バイト$/.test(info.trim()), info);
@@ -100,7 +100,7 @@ r.expect('章を切り替えても読み込み直さない', await page.evaluate
 r.expect('問題文が切り替わる', (await page.$eval('.lesson-text h1', (e) => e.textContent)).includes('String#shout'));
 r.expect('出力の内容が残る', (await h.out()) === outBefore);
 r.expect('章を切り替えると main.rb が開く', (await page.$eval('.wb-file', (e) => e.textContent)) === 'main.rb');
-r.expect('課題をチェックのボタンが今の章の spec になる', (await page.$$eval('.wb-term-head button', (bs) => bs.map((b) => b.textContent).join('|'))).includes('bin/rspec spec/31_spec.rb'));
+r.expect('課題をチェックのボタンが今の章の spec になる', (await page.$$eval('.wb-term-head button', (bs) => bs.map((b) => b.textContent).join('|'))).includes('bin/rspec spec/29_spec.rb'));
 await h.open('array.c');
 r.expect('章を切り替えても書き換えが残る', await hasM());
 await page.goBack();
