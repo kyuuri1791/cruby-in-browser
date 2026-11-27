@@ -105,7 +105,7 @@ end`),
   },
   {
     slug: "lexer",
-    part: "第 1 部　p 1 + 2 を一周する",
+    part: "第 1 部　p 1 + 2 が動くまで",
     title: "字句解析（prism.c）",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
