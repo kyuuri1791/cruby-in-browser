@@ -22,6 +22,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
   const lesson = lessons[index];
   const specs = lessons.filter((l) => l.spec).map((l) => ({ slug: l.slug, spec: l.spec! }));
   const [tocOpen, setTocOpen] = useState(false);
+  const locate = (label: string, line: number, anchor?: string) => workbench.current?.openAt(label, line, anchor);
 
   const show = (next: string, push: boolean) => {
     const l = lessons.find((x) => x.slug === next);
@@ -83,7 +84,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
             <article className="lesson-text" key={lesson.slug}>
               {pager("top")}
               <h1>{lesson.title}</h1>
-              {lesson.body && <LessonBody blocks={lesson.body} copyable />}
+              {lesson.body && <LessonBody blocks={lesson.body} copyable onLocate={locate} />}
               {lesson.refs && (
                 <section className="refs">
                   <h2>参考文献</h2>
@@ -99,13 +100,13 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
               {lesson.task && (
                 <section className="task">
                   <h2>課題</h2>
-                  <LessonBody blocks={lesson.task} />
+                  <LessonBody blocks={lesson.task} onLocate={locate} />
                 </section>
               )}
               {lesson.hints && (
                 <details className="hint">
                   <summary>ヒント</summary>
-                  <LessonBody blocks={lesson.hints} />
+                  <LessonBody blocks={lesson.hints} onLocate={locate} />
                 </details>
               )}
               {lesson.answer && (

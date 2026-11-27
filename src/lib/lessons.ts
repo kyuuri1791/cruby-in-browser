@@ -69,7 +69,7 @@ export const lessons: Lesson[] = [
 p RUBY_VERSION.equal?(Ruby::VERSION)
 p defined?(Ruby::COPYRIGHT)
 p defined?(RUBY_COPYRIGHT)`),
-      p("2. `version.c` の `Init_version` の `\"COPYRIGHT\"` の行を消し、`make` して 1 と同じコードを実行する。"),
+      p("2. {{version.c:165|\"COPYRIGHT\"}} の行を消し、`make` して 1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "(2) MRI ソースコードの構造（Ruby Hack Challenge）", url: "https://github.com/ko1/rubyhackchallenge/blob/master/JA/2_mri_structure.md" },
@@ -106,17 +106,25 @@ end`),
   {
     slug: "lexer",
     part: "第 1 部　p 1 + 2 が動くまで",
-    title: "字句解析（prism.c）",
+    title: "字句解析",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
       rb(`
-p Ruby::Prism.lex("p 1 + 2").value.map { _1[0].type }
-p Ruby::Prism.lex("p +2").value.map { _1[0].type }
-p Ruby::Prism.lex("p 1 +2").value.map { _1[0].type }
-p Ruby::Prism.lex("p 1 ＋ 2").value.map { _1[0].type }`),
-      p("2. `prism.c` の `parser_lex` の `case '+':` で、最後にある `LEX(PM_TOKEN_PLUS);` を `LEX(PM_TOKEN_MINUS);` に変える。`make` し、`main.rb` に下を書いて実行する。`p 1 + 2` は何を出すか。"),
+def lex(code)
+  puts code
+  Ruby::Prism.lex(code).value.each { |t, _| puts "  #{t.value.ljust(4)} #{t.type}" }
+end
+lex "p 1 + 2"
+lex "p +2"
+lex "x = 1; p x +2"
+lex "p 1 ＋ 2"`),
+      p("2. {{prism.c:11010|LEX(PM_TOKEN_PLUS);}} の `LEX(PM_TOKEN_PLUS);` を `LEX(PM_TOKEN_MINUS);` に変える。`make` し、`main.rb` に下を書いて実行する。`p 1 + 2` は何を出すか。"),
       rb(`
-p Ruby::Prism.lex("p 1 + 2").value.map { _1[0].type }
+def lex(code)
+  puts code
+  Ruby::Prism.lex(code).value.each { |t, _| puts "  #{t.value.ljust(4)} #{t.type}" }
+end
+lex "p 1 + 2"
 p 1 + 2`),
     ],
     refs: [
@@ -167,19 +175,31 @@ end`),
   },
   {
     slug: "parser",
-    title: "構文解析（prism.c）",
+    title: "構文解析",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
-      rb(`pp Ruby::Prism.parse("p 1 + 2").value`),
-      p("2. `prism.c` の `pm_call_node_binary_create` にある次の 2 行で、`receiver` と `argument` を入れ替える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
-      c(`
-node->receiver = receiver;
-pm_arguments_node_arguments_append(parser->arena, arguments, argument);`),
       rb(`
+pp Ruby::Prism.parse("p 1 + 2").value.statements.body[0]
+pp Ruby::Prism.parse("10 - 1").value.statements.body[0]`),
+      p("2. {{prism.c:2991|node->receiver = receiver;}} と {{prism.c:2995|pm_arguments_node_arguments_append(parser->arena, arguments, argument);}} で、`receiver` と `argument` を入れ替えて次のようにする。`make` し、`main.rb` に下を書いて実行する。木と結果はどう変わるか。"),
+      c(`
+node->receiver = argument;
+pm_arguments_node_arguments_append(parser->arena, arguments, receiver);`),
+      rb(`
+def text(node) = node.type == :integer_node ? node.value.to_s : node.slice
+def tree(code)
+  call = Ruby::Prism.parse(code).value.statements.body[0]
+  puts code
+  puts "  #{call.name} の呼び出し"
+  puts "  ├ receiver:  #{call.receiver ? text(call.receiver) : "（なし）"}"
+  puts "  └ arguments: #{call.arguments.arguments.map { text(_1) }.join(", ")}"
+end
+tree "10 - 1"
+tree "10.-(1)"
 p 10 - 1
 p 10.-(1)
-p 2 ** 3
 p "a" + "b"`),
+      note("壊したパーサは、Ruby で書かれた prism の表示のライブラリも読むので、`pp` では木を表示できません。ここでは `receiver` と `arguments` を直接読んで表示します。"),
     ],
     refs: [
       { title: "Advent of Prism: Part 13 - Calls (part 1)（Kevin Newton）", url: "https://kddnewton.com/2023/12/13/advent-of-prism-part-13.html" },
@@ -229,20 +249,20 @@ end`),
   },
   {
     slug: "p-compile",
-    title: "コンパイラ（prism_compile.c）",
+    title: "コンパイラ",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
       rb(`
 pp Ruby::Prism.parse("p 1 + 2").value
 puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm`),
-      p("2. `prism_compile.c` の `pm_compile_node` の `case PM_INTEGER_NODE:` で、`PUSH_INSN1(ret, location, putobject, operand);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      p("2. {{prism_compile.c:9740|PUSH_INSN1(ret, location, putobject, operand);}} の `PUSH_INSN1(ret, location, putobject, operand);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
       c(`if (operand == INT2FIX(2)) operand = INT2FIX(20);`),
       rb(`
 p 1 + 2
 p eval("1 + 2")
 p "1 + 2"
 p [2].size`),
-      p("3. `main.rb` に次を書いて実行する。"),
+      p("3. `main.rb` に下を書いて実行する。次に、{{prism_compile.c:7565|if (pm_opt_str_freeze_p(iseq, node)) {}} の `if (pm_opt_str_freeze_p(iseq, node)) {` を `if (0) {` に変える。`make` し、もう一度実行する。命令列はどう変わるか。"),
       rb(`puts RubyVM::InstructionSequence.compile('"a".freeze').disasm`),
     ],
     refs: [
@@ -259,7 +279,7 @@ x + 2         #=> 3
 1.send(:+, 2) #=> 3`),
     ],
     hints: [
-      note("3 の `opt_str_freeze` は、`pm_compile_call_node` の `switch (method_id)` で出しています。`+` は `idPLUS` です。"),
+      note("3 で書き換えた `switch (method_id)` に、`+`（`idPLUS`）の場合を足します。"),
       note("`node->receiver` と `node->arguments->arguments.nodes[0]` が、`+` の左右のノードです。整数リテラルのノードは `PM_INTEGER_NODE` で、値は `parse_integer` で取れます。"),
     ],
     answer: [
@@ -303,11 +323,11 @@ end`),
   },
   {
     slug: "p-vm",
-    title: "VM（vm_insnhelper.c）",
+    title: "VM",
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
       rb(`puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("2. {{vm_insnhelper.c:7064|return rb_fix_plus_fix(recv, obj);}} の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "fast path\\n");`),
       rb(`
 p 1 + 2
@@ -368,15 +388,14 @@ end`),
   },
   {
     slug: "p-call",
-    title: "C の関数（numeric.c）",
+    title: "C の関数",
     body: [
-      p("1. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。"),
-      c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
+      p("1. {{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足す。`make` し、`main.rb` に下を書いて実行する。`cfunc +` はどちらで出力されるか。"),
+      c(`if (me->def->original_id == idPLUS) fprintf(stderr, "cfunc +\\n");`),
       rb(`
 p 1 + 2
 p 1.send(:+, 2)`),
-      p("2. `main.rb` に次を書いて実行する。"),
-      rb(`p Integer.instance_method(:+).source_location`),
+      p("2. 1 の行を消し、{{numeric.c:6557|rb_define_method(rb_cInteger, \"+\", rb_int_plus, 1);}} の `rb_define_method(rb_cInteger, \"+\", rb_int_plus, 1);` を消す。`make` し、1 と同じコードを実行する。何が起きるか。"),
     ],
     refs: [
       { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
@@ -428,11 +447,15 @@ end`),
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
       rb(`
-p Ruby::Prism.lex("p +2").value.map { _1[0].type }
-p Ruby::Prism.lex("x = 1; p x +2").value.map { _1[0].type }
-p Ruby::Prism.lex("if x then 1 end").value.map { _1[0].type }
-p Ruby::Prism.lex("1 if x").value.map { _1[0].type }`),
-      p("2. `prism.c` の `parser_lex` の `case '+':` にある、`lex_state_spcarg_p(parser, space_seen) ? … : false` の 3 項演算子全体を `false` に変える。`make` し、`main.rb` に `p +2` を書いて実行する。何が起きるか。"),
+def lex(code)
+  puts code
+  Ruby::Prism.lex(code).value.each { |t, _| puts "  #{t.value.ljust(4)} #{t.type}" }
+end
+lex "p +2"
+lex "x = 1; p x +2"
+lex "if x then 1 end"
+lex "1 if x"`),
+      p("2. {{prism.c:10991|lex_state_spcarg_p(parser, space_seen) ? (pm_parser_warn_token(parser, &parser->current, PM_WARN_AMBIGUOUS_FIRST_ARGUMENT_PLUS)}} の `lex_state_spcarg_p(parser, space_seen) ? … : false` の 3 項演算子全体を `false` に変える。`make` し、`main.rb` に `p +2` を書いて実行する。何が起きるか。"),
     ],
     refs: [
       { title: "第 11 章「状態付きスキャナ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/contextual.html" },
@@ -487,7 +510,7 @@ end`),
       rb(`
 p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { _1[0].type }
 p Ruby::Prism.lex("3k").value.map { _1[0].type }`),
-      p("2. `prism.c` の `lex_numeric_prefix` で、`value = value * 10 + (uint64_t) (c - '0');` を `value = value * 10;` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      p("2. {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の `value = value * 10 + (uint64_t) (c - '0');` を `value = value * 10;` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
       rb(`
 p 12
 p 1_2
@@ -548,7 +571,7 @@ def tree(n) = n.type == :call_node && n.arguments ? "(#{tree(n.receiver)} #{n.na
 p tree(Ruby::Prism.parse("1 + 2 * 3").value.statements.body[0])
 p tree(Ruby::Prism.parse("1 - 2 - 3").value.statements.body[0])
 p tree(Ruby::Prism.parse("2 ** 3 ** 2").value.statements.body[0])`),
-      p("2. `prism.c` の `pm_binding_powers` で、`[PM_TOKEN_PLUS]` の `PM_BINDING_POWER_TERM` を `PM_BINDING_POWER_FACTOR` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      p("2. {{prism.c:12785|[PM_TOKEN_PLUS] = LEFT_ASSOCIATIVE(PM_BINDING_POWER_TERM),}} の `PM_BINDING_POWER_TERM` を `PM_BINDING_POWER_FACTOR` に変える。`make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
       rb(`
 p 1 + 2 * 3
 p 2 * 3 + 1
@@ -604,7 +627,7 @@ end`),
 p Ruby::Prism.parse("foo").value.statements.body[0].type
 p Ruby::Prism.parse("foo = 1; foo").value.statements.body[1].type
 p Ruby::Prism.parse("[1].map { it }").value.statements.body[0].block.body.body[0].type`),
-      p("2. `prism.c` の `pm_token_is_it` の中身を `return false;` にする。`make` し、`main.rb` に下を書いて実行する。"),
+      p("2. {{prism.c:5469|return (end - start == 2) && (start[0] == 'i') && (start[1] == 't');}} の行を `return false;` に変える。`make` し、`main.rb` に下を書いて実行する。"),
       rb(`
 p [1, 2].map { _1 * 2 }
 p [1, 2].map { it * 2 }`),
@@ -728,7 +751,7 @@ end`),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :n : :v").disasm`),
-      p("2. `prism_compile.c` の `pm_compile_branch_condition` の最後にある `branchunless` を `branchif` に変える。`make` し、`main.rb` に `p 1` を書いて実行する。何が起きるか。"),
+      p("2. {{prism_compile.c:1114|PUSH_INSNL(ret, location, branchunless, else_label);}} の `branchunless` を `branchif` に変える。`make` し、`main.rb` に `p 1` を書いて実行する。何が起きるか。"),
     ],
     refs: [
       { title: "Advent of YARV: Part 14 - Branching（Kevin Newton）", url: "https://kddnewton.com/2022/12/14/advent-of-yarv-part-14.html" },
@@ -797,7 +820,7 @@ end`),
       rb(`
 puts RubyVM::InstructionSequence.compile("p 5").disasm
 puts RubyVM::InstructionSequence.compile("p 1").disasm`),
-      p("2. `vm.inc` の `putobject` の `VALUE val = (VALUE)GET_OPERAND(1);` の次に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれが 500 になるか。"),
+      p("2. {{vm.inc:869|VALUE val = (VALUE)GET_OPERAND(1);}} の `VALUE val = (VALUE)GET_OPERAND(1);` の次に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれが 500 になるか。"),
       c(`if (val == INT2FIX(5)) val = INT2FIX(500);`),
       rb(`
 p 5
@@ -983,7 +1006,7 @@ end`),
 puts RubyVM::InstructionSequence.compile("x = 1; p x").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; [1].each { p x }").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; [1].each { [2].each { p x } }").disasm`),
-      p("2. `vm.inc` の `getlocal_WC_1` の `val = *(vm_get_ep(GET_EP(), level) - idx);` の次に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれが 100 になるか。"),
+      p("2. {{vm.inc:4901|val = *(vm_get_ep(GET_EP(), level) - idx);}} の `val = *(vm_get_ep(GET_EP(), level) - idx);` の次に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれが 100 になるか。"),
       c(`if (val == INT2FIX(1)) val = INT2FIX(100);`),
       rb(`
 x = 1
@@ -1078,7 +1101,7 @@ end`),
     body: [
       p("1. `main.rb` に次を書いて実行する。"),
       rb(`puts RubyVM::InstructionSequence.compile("@a = 1; @a").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_getivar` で、`else { // cache miss case` の次に下の 1 行目を足す。`make` し、`main.rb` に下を書いて実行する。`miss @a` は何回出るか。"),
+      p("2. {{vm_insnhelper.c:1312|else { // cache miss case}} の `else { // cache miss case` の次に下の 1 行目を足す。`make` し、`main.rb` に下を書いて実行する。`miss @a` は何回出るか。"),
       c(`if (id == rb_intern("@a")) fprintf(stderr, "miss @a\\n");`),
       rb(`
 class R
@@ -1178,7 +1201,7 @@ end`),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 0; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 0; x || :or").disasm`),
-      p("2. `vm.inc` の `branchunless` の `if (!RTEST(val)) {` を次に変えて `make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
+      p("2. {{vm.inc:3355|if (!RTEST(val)) {}} の `if (!RTEST(val)) {` を次に変えて `make` し、`main.rb` に下を書いて実行する。どれが変わるか。"),
       c(`if (!RTEST(val) || val == INT2FIX(0)) {`),
       rb(`
 x = 0
@@ -1291,7 +1314,7 @@ end`),
       rb(`
 puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a + b").disasm
 puts RubyVM::InstructionSequence.compile("a = 1; b = 2; a.foo(b)").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_opt_plus` の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("2. {{vm_insnhelper.c:7064|return rb_fix_plus_fix(recv, obj);}} の `return rb_fix_plus_fix(recv, obj);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "fast path\\n");`),
       rb(`
 a = 1
@@ -1473,7 +1496,7 @@ class C
 end
 
 p C.ancestors`),
-      p("2. `class.c` の `rb_mod_ancestors` の `if (p != RCLASS_ORIGIN(p)) continue;` の行を消し、`make` して 1 と同じコードを実行する。"),
+      p("2. {{class.c:2167|if (p != RCLASS_ORIGIN(p)) continue;}} の行を消し、`make` して 1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "Better Know A Ruby Thing: Method Lookup（Noel Rappin）", url: "https://buttondown.com/noelrap/archive/better-know-a-ruby-thing-method-lookup" },
@@ -1565,7 +1588,7 @@ end`),
       rb(`
 puts RubyVM::InstructionSequence.compile("p 1 + 2").disasm
 puts RubyVM::InstructionSequence.compile("[1].size").disasm`),
-      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("2. {{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
       rb(`
 p 1 + 2
@@ -1575,7 +1598,7 @@ p 1 + 2
 "a".upcase`),
       p("3. `main.rb` に次を書いて実行する。"),
       rb(`p Array.instance_method(:first).source_location`),
-      p("4. `vm_insnhelper.c` の `vm_search_method_slowpath0` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
+      p("4. {{vm_insnhelper.c:2313|vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)}} の関数の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。`miss at` は何回出るか。"),
       c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
       rb(`3.times { [1, 2].at(0) }`),
     ],
@@ -1907,7 +1930,7 @@ l = lambda { |a, b| [a, b] }
 p pr.lambda?, l.lambda?
 p pr.call(1)
 p l.call(1)`),
-      p("2. `proc.c` の `rb_proc_lambda_p` の `return` の行を `return Qtrue;` に変えて `make` し、1 と同じコードを実行する。"),
+      p("2. {{proc.c:827|return RBOOL(proc->header.is_lambda);}} の `return` の行を `return Qtrue;` に変えて `make` し、1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "手続きオブジェクトの挙動の詳細（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2flambda_proc.html" },
@@ -1982,7 +2005,7 @@ p [[1, 2]].map { |a| a }
 p [[1, 2]].map { |a, | a }
 p proc { |a, b| [a, b] }.call([1, 2])
 p((lambda { |a, b| [a, b] }.call([1, 2]) rescue $!))`),
-      p("2. `vm_insnhelper.c` の `vm_callee_setup_block_arg` で、`calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);` の前に次の行を足す。`make` し、1 と同じコードを実行する。どれで出力されるか。"),
+      p("2. {{vm_insnhelper.c:5544|calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);}} の `calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);` の前に次の行を足す。`make` し、1 と同じコードを実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "splat\\n");`),
     ],
     refs: [
@@ -2070,7 +2093,7 @@ end`),
 x = 10
 o = Object.new
 p o.instance_exec { [equal?(o), x] }`),
-      p("2. `vm_eval.c` の `yield_under` の `new_captured.self = self;` の行を消し、`make` して 1 と同じコードを実行する。"),
+      p("2. {{vm_eval.c:2282|new_captured.self = self;}} の行を消し、`make` して 1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "Understanding instance exec in ruby（BigBinary）", url: "https://www.bigbinary.com/blog/understanding-instance-exec-in-ruby" },
@@ -2144,7 +2167,7 @@ Foo.define_method(:c) { 3 }
 p Foo.private_method_defined?(:a)
 p Foo.private_method_defined?(:b)
 p Foo.private_method_defined?(:c)`),
-      p("2. `proc.c` の `rb_mod_define_method` の `scope_visi = CREF_SCOPE_VISI(cref);` の行を消し、`make` して 1 と同じコードを実行する。"),
+      p("2. {{proc.c:3271|scope_visi = CREF_SCOPE_VISI(cref);}} の行を消し、`make` して 1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "Bug #19749: Confirm correct behaviour when attaching private method with #define_method（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/19749" },
@@ -2228,7 +2251,7 @@ p pr.call(1)
 class Foo; end
 Foo.define_method(:m, pr)
 p Foo.new.m(1)`),
-      p("2. `proc.c` の `rb_mod_define_method_with_visibility` の `proc->header.is_lambda = TRUE;` の行を消し、`make` して 1 と同じコードを実行する。"),
+      p("2. {{proc.c:3211|proc->header.is_lambda = TRUE;}} の行を消し、`make` して 1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "Feature #16499: define_method(non_lambda) should not change the semantics of the given Proc（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/16499" },
@@ -2314,15 +2337,15 @@ end`),
       rb(`
 p Array.instance_method(:first).source_location
 p Array.instance_method(:at).source_location`),
-      p("2. `array.c` の `rb_ary_at` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("2. {{array.c:2028|rb_ary_at(VALUE ary, VALUE pos)}} の関数の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "rb_ary_at called\\n");`),
       rb(`
 p [1, 2, 3].at(1)
 p [1, 2, 3][1]
 p [1, 2, 3].dig(1)`),
-      p("3. 2 の行は残したまま、`vm_insnhelper.c` の `vm_call_cfunc_with_frame_` の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、2 と同じコードを実行する。"),
+      p("3. 2 の行は残したまま、{{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} の `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に次の行を足して `make` し、2 と同じコードを実行する。"),
       c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
-      p("4. `array.c` の `Init_Array` の `\"at\"` の行を消し、`make` して 2 と同じコードを実行する。"),
+      p("4. {{array.c:9044|rb_define_method(rb_cArray, \"at\", rb_ary_at, 1);}} の行を消し、`make` して 2 と同じコードを実行する。"),
     ],
     refs: [
       { title: "(3) 演習：メソッドの追加（Ruby Hack Challenge）", url: "https://github.com/ko1/rubyhackchallenge/blob/master/JA/3_practice.md" },
@@ -2391,13 +2414,13 @@ end`),
     slug: "string-shout",
     title: "String#shout",
     body: [
-      p("1. `string.c` の `rb_str_upcase` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("1. {{string.c:10087|rb_str_upcase(int argc, VALUE *argv, VALUE str)}} の関数の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "rb_str_upcase called\\n");`),
       rb(`
 p "a".upcase
 p :a.upcase
 p "a".capitalize`),
-      p("2. `vm_insnhelper.c` の `vm_call_cfunc_with_frame_` と `vm_eval.c` の `vm_call0_cfunc_with_frame` にある `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に、下の 1 行目と 2 行目をそれぞれ足す。`make` し、`main.rb` に下を書いて実行する。`inspect` はどちらで出力されるか。"),
+      p("2. {{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} と {{vm_eval.c:166|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} にある `val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);` の前に、下の 1 行目と 2 行目をそれぞれ足す。`make` し、`main.rb` に下を書いて実行する。`inspect` はどちらで出力されるか。"),
       c(`
 fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));
 fprintf(stderr, "call0 %s\\n", rb_id2name(me->def->original_id));`),
@@ -2475,7 +2498,7 @@ end`),
     slug: "integer-triple",
     title: "Integer#triple",
     body: [
-      p("1. `numeric.c` の `rb_int_mul` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで何が出力されるか。"),
+      p("1. {{numeric.c:4304|rb_int_mul(VALUE x, VALUE y)}} の関数の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで何が出力されるか。"),
       c(`fprintf(stderr, "rb_int_mul: %s\\n", FIXNUM_P(x) ? "Fixnum" : "Bignum");`),
       rb(`
 p 7 * 3
@@ -2549,7 +2572,7 @@ end`),
     slug: "hash-sum-values",
     title: "Hash#sum_values",
     body: [
-      p("1. `hash.c` の `each_value_i` の `return ST_CONTINUE;` を `return ST_STOP;` に変えて `make` し、`main.rb` に次を書いて実行する。"),
+      p("1. {{hash.c:3342|return ST_CONTINUE;}} の `return ST_CONTINUE;` を `return ST_STOP;` に変えて `make` し、`main.rb` に次を書いて実行する。"),
       rb(`
 { a: 1, b: 2, c: 3 }.each_value { |v| p v }
 p({ a: 1, b: 2, c: 3 }.values)`),
@@ -2632,7 +2655,7 @@ end`),
 p nil.to_s.frozen?
 p nil.to_s.equal?(nil.to_s)
 p "".equal?("")`),
-      p("2. `object.c` の `rb_nil_to_s` の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
+      p("2. {{object.c:1429|rb_nil_to_s(VALUE obj)}} の関数の先頭に次の行を足して `make` し、`main.rb` に下を書いて実行する。どれで出力されるか。"),
       c(`fprintf(stderr, "rb_nil_to_s called\\n");`),
       rb(`
 p nil.to_s

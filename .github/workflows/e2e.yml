@@ -18,6 +18,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: 教材の「ファイル:行番号」が配信しているソースと合っているか
+        run: node scripts/locations.mjs
       - run: npm run build
       - name: standalone のサーバーを起動する
         run: |

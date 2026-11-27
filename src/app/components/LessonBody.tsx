@@ -18,12 +18,29 @@ function CodeBlock({ lang, code, copyable }: { lang: string; code: string; copya
   );
 }
 
-/** `...` をインラインのコードにする */
-function Inline({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`)/g);
+/** 「ファイル:行番号」のリンクを押した時に呼ぶ関数（作業台でそのファイルのその行を開く） */
+export type Locate = (label: string, line: number, anchor?: string) => void;
+
+/**
+ * `...` をインラインのコードにし、{{ファイル:行番号|目印}} を、そのファイルのその行を開くリンクにする。
+ * 目印は、その行に含まれるコード。書き換えて行がずれていても、行番号の近くで目印を探して移動する
+ */
+function Inline({ text, onLocate }: { text: string; onLocate?: Locate }) {
+  const parts = text.split(/(`[^`]+`|\{\{[^}]+\}\})/g);
   return (
     <>
-      {parts.map((p, i) => (p.startsWith("`") && p.endsWith("`") && p.length > 1 ? <code key={i}>{p.slice(1, -1)}</code> : <span key={i}>{p}</span>))}
+      {parts.map((p, i) => {
+        const loc = p.match(/^\{\{([^:|]+):(\d+)(?:\|(.*))?\}\}$/);
+        if (loc) {
+          const [, label, line, anchor] = loc;
+          return (
+            <button key={i} type="button" className="loc-link" onClick={() => onLocate?.(label, Number(line), anchor)} title={`${label} の ${line} 行目を開く`}>
+              {label}:{line}
+            </button>
+          );
+        }
+        return p.startsWith("`") && p.endsWith("`") && p.length > 1 ? <code key={i}>{p.slice(1, -1)}</code> : <span key={i}>{p}</span>;
+      })}
     </>
   );
 }
@@ -68,19 +85,19 @@ function Diff({ file, diff }: { file: string; diff: string }) {
 }
 
 /** copyable: コードブロックにコピーのボタンを付ける（課題の前の手順だけ） */
-export default function LessonBody({ blocks, copyable = false }: { blocks: Block[]; copyable?: boolean }) {
+export default function LessonBody({ blocks, copyable = false, onLocate }: { blocks: Block[]; copyable?: boolean; onLocate?: Locate }) {
   return (
     <>
       {blocks.map((b, i) => {
         switch (b.type) {
           case "p":
-            return <p key={i}><Inline text={b.text} /></p>;
+            return <p key={i}><Inline text={b.text} onLocate={onLocate} /></p>;
           case "code":
             return <CodeBlock key={i} lang={b.lang} code={b.code} copyable={copyable} />;
           case "list":
-            return <ul key={i}>{b.items.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ul>;
+            return <ul key={i}>{b.items.map((it, j) => <li key={j}><Inline text={it} onLocate={onLocate} /></li>)}</ul>;
           case "note":
-            return <aside key={i} className="note"><Inline text={b.text} /></aside>;
+            return <aside key={i} className="note"><Inline text={b.text} onLocate={onLocate} /></aside>;
           case "diff":
             return <Diff key={i} file={b.file} diff={b.diff} />;
         }

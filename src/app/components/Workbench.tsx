@@ -19,7 +19,23 @@ type Props = {
 export type WorkbenchHandle = {
   /** ファイルをタブで開く */
   openFile: (name: string) => void;
+  /** 教材の「ファイル:行番号」のリンク。label（array.c など）のファイルを開き、line の近くで anchor を含む行へ移動する */
+  openAt: (label: string, line: number, anchor?: string) => void;
 };
+
+/** anchor を含む行のうち、line にいちばん近い行（書き換えて行がずれていても、目印の行に着く）。見つからなければ line */
+function nearestLine(text: string, line: number, anchor?: string) {
+  if (!anchor) return line;
+  let best = line;
+  let bestDist = Infinity;
+  text.split("\n").forEach((l, i) => {
+    if (l.includes(anchor) && Math.abs(i + 1 - line) < bestDist) {
+      best = i + 1;
+      bestDist = Math.abs(i + 1 - line);
+    }
+  });
+  return best;
+}
 
 // Ruby のファイル（/work に置いて ruby から読むもの）。C のファイルは "array" のような名前、Ruby のファイルはパスで区別する
 const MAIN = "main.rb";
@@ -87,7 +103,7 @@ export default function Workbench({ current, specs, ref }: Props) {
     [],
   );
   const editor = useRef<CodeEditorHandle>(null);
-  const pendingGoto = useRef<{ line: number; col: number } | null>(null);
+  const pendingGoto = useRef<{ line: number; col: number; anchor?: string } | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
 
   // 最初に: マニフェスト、このページで書き換えた C のファイル、Makefile
@@ -132,7 +148,7 @@ export default function Workbench({ current, specs, ref }: Props) {
     if (text === undefined || !pendingGoto.current) return;
     const g = pendingGoto.current;
     pendingGoto.current = null;
-    requestAnimationFrame(() => editor.current?.gotoLine(g.line, g.col));
+    requestAnimationFrame(() => editor.current?.gotoLine(nearestLine(text, g.line, g.anchor), g.col));
   }, [file, text]);
 
   const setEdited = (name: string, value: string | undefined) => {
@@ -204,8 +220,20 @@ export default function Workbench({ current, specs, ref }: Props) {
 
   const openFile = (name: string) => setFile(name);
 
+  const openAt = (label: string, line: number, anchor?: string) => {
+    const name = manifest?.editable.find((f) => f.label === label)?.name;
+    if (!name) return;
+    const current = textOf(name);
+    if (name === file && current !== undefined) editor.current?.gotoLine(nearestLine(current, line, anchor), 1);
+    else {
+      pendingGoto.current = { line, col: 1, anchor };
+      openFile(name);
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     openFile,
+    openAt,
   }));
 
   const jumpTo = (target: string, line: number, col: number) => {

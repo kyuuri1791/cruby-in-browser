@@ -147,6 +147,9 @@ button.link:hover { text-decoration: underline; background: none; }
 .hint[open] summary { margin-bottom: 8px; color: var(--fg); }
 .lesson-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 24px; font-size: 13px; }
 .lesson-nav-top { margin-top: 0; margin-bottom: 12px; }
+/* 教材の「ファイル:行番号」のリンク。押すと作業台でそのファイルのその行を開く */
+.loc-link { display: inline; padding: 0; border: none; border-radius: 0; background: none; color: var(--focus); font-family: var(--mono); font-size: 0.92em; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.loc-link:hover { text-decoration-thickness: 2px; }
 
 /* 区切り線（ドラッグで大きさを変える）。見た目は 1px、掴める幅は広め */
 .splitter { position: relative; background: var(--border); touch-action: none; z-index: 2; }

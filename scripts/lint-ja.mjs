@@ -79,7 +79,9 @@ let count = 0;
 const TARGET = /^(src|scripts|ruby-build)\/.*\.(tsx?|mjs|md)$|^public\/cruby\/[^/]+\.mjs$/;
 for (const file of files.filter((f) => TARGET.test(path.relative(ROOT, f)))) {
   for (const item of extract(file)) {
-    const result = await linter.lintText(item.text, 'item.md');
+    // 教材の {{ファイル:行番号|目印}} はリンク（目印はコード）なので、インラインのコードとして検査する
+    const text = item.text.replace(/\{\{([^:|}]+):(\d+)\|[^}]*\}\}/g, '`$1:$2`');
+    const result = await linter.lintText(text, 'item.md');
     for (const m of result.messages) {
       if (item.comment && CODE_LIKE_RULES.has(m.ruleId)) continue;
       count++;
