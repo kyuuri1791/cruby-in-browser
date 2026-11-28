@@ -135,7 +135,7 @@ p 1 + 2`),
     task: [
       p("全角の `＋` を、`+` と同じ `PLUS` の字句にする。"),
       rb(`
-Ruby::Prism.lex("1 ＋ 2").value.map { _1[0].type } #=> [:INTEGER, :PLUS, :INTEGER, :EOF]`),
+Ruby::Prism.lex("1 ＋ 2").value.map { |t, _| t.type } #=> [:INTEGER, :PLUS, :INTEGER, :EOF]`),
     ],
     hints: [
       note("どの記号にも当たらなかった文字は、`parser_lex` の `switch` の `default:` で識別子として読まれます。"),
@@ -158,7 +158,7 @@ Ruby::Prism.lex("1 ＋ 2").value.map { _1[0].type } #=> [:INTEGER, :PLUS, :INTEG
     ],
     spec: spec(`
 RSpec.describe "全角の ＋" do
-  def types(code) = Ruby::Prism.lex(code).value.map { _1[0].type }
+  def types(code) = Ruby::Prism.lex(code).value.map { |t, _| t.type }
 
   it "PLUS の字句になる" do
     expect(types("1 ＋ 2")).to eq([:INTEGER, :PLUS, :INTEGER, :EOF])
@@ -192,7 +192,7 @@ def tree(code)
   puts code
   puts "  #{call.name} の呼び出し"
   puts "  ├ receiver:  #{call.receiver ? text(call.receiver) : "（なし）"}"
-  puts "  └ arguments: #{call.arguments.arguments.map { text(_1) }.join(", ")}"
+  puts "  └ arguments: #{call.arguments.arguments.map { |n| text(n) }.join(", ")}"
 end
 tree "10 - 1"
 tree "10.-(1)"
@@ -446,7 +446,7 @@ end`),
     title: "予約語と字句の状態",
     body: [
       p("このまとまりの問い：同じ文字列が、なぜ違う字句や構文木になるのか。"),
-      p("1. `main.rb` に次を書いて実行する。（`+` の切られ方の違いを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`+` の切られ方の違いを見てみる。"),
       rb(`
 def lex(code)
   puts code
@@ -500,7 +500,7 @@ lex "1 if x"`),
     ],
     spec: spec(`
 RSpec.describe "予約語の もし" do
-  def types(code) = Ruby::Prism.lex(code).value.map { _1[0].type }
+  def types(code) = Ruby::Prism.lex(code).value.map { |t, _| t.type }
 
   it "文の頭では KEYWORD_IF になる" do
     expect(types("もし x then 1 end").first).to eq(:KEYWORD_IF)
@@ -521,10 +521,10 @@ end`),
     slug: "numeric-suffix",
     title: "数値リテラル",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（接尾辞の付いた数値がどんな字句になるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。suffix の付いた数値がどんな字句になるかを見てみる。"),
       rb(`
-p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { _1[0].type }
-p Ruby::Prism.lex("3k").value.map { _1[0].type }`),
+p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { |t, _| t.type }
+p Ruby::Prism.lex("3k").value.map { |t, _| t.type }`),
       p("2. 小さな 10 進の整数は、字句解析の途中で {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の行が 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、以下を実行する。どれが変わり、どれが変わらないかを確認する。"),
       rb(`
 p 12
@@ -545,7 +545,7 @@ p 12345678901234567890`),
     ],
     hints: [
       note("2 で見たとおり、小さな 10 進の整数は字句解析の途中で値まで計算しています（`parser->integer.value`）。その値は、`pm_integer_node_create` が `parser->integer.start == token->start` のときに使います。"),
-      note("`r` や `i` の接尾辞は、`lex_numeric` で `match(parser, 'r')` のように読んでいます。"),
+      note("`r` や `i` の suffix は、`lex_numeric` で `match(parser, 'r')` のように読んでいます。"),
     ],
     answer: [
       diff("ruby/prism/prism.c", `
@@ -568,7 +568,7 @@ RSpec.describe "整数の k" do
   end
 
   it "1 つの INTEGER の字句になる" do
-    expect(Ruby::Prism.lex("3k").value.map { _1[0].type }).to eq([:INTEGER, :EOF])
+    expect(Ruby::Prism.lex("3k").value.map { |t, _| t.type }).to eq([:INTEGER, :EOF])
   end
 
   it "k のない整数は変わらない" do
@@ -580,7 +580,7 @@ end`),
     slug: "precedence",
     title: "演算子の優先順位",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（式がどんな括弧の付き方の木になるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。式がどんな括弧の付き方の木になるかを見てみる。"),
       rb(`
 def tree(n) = n.type == :call_node && n.arguments ? "(#{tree(n.receiver)} #{n.name} #{tree(n.arguments.arguments[0])})" : n.slice
 p tree(Ruby::Prism.parse("1 + 2 * 3").value.statements.body[0])
@@ -637,7 +637,7 @@ end`),
     slug: "var-or-call",
     title: "変数か、メソッド呼び出しか",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（同じ `foo` が、どの書き方のときに変数として読まれるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。同じ `foo` が、どの書き方のときに変数として読まれるかを見てみる。"),
       rb(`
 def kind(code) = puts "#{code.ljust(22)} #{Ruby::Prism.parse(code).value.statements.body.last.type}"
 kind "foo"
@@ -647,12 +647,12 @@ kind "foo = 1; foo"
 kind "foo = 1 if false; foo"
 foo = 1 if false
 p foo`),
-      p("2. `main.rb` に次を書いて実行する。（代入していないブロックの中の `it` がどう読まれるかを見てみる）"),
+      p("2. `main.rb` に次を書いて実行する。代入していないブロックの中の `it` がどう読まれるかを見てみる。"),
       rb(`p Ruby::Prism.parse("[1].map { it }").value.statements.body[0].block.body.body[0].type`),
       p("3. 識別子を変数として読むかは `parse_variable` が決めている。その中で、名前が `it` かを {{prism.c:16772|pm_token_is_it(parser->previous.start, parser->previous.end)) {}} の行で確かめている。この行を `} else if (0) {` に変えて `make` する。"),
       p("以下を実行し、`it` がどう読まれるようになったかを確認する。"),
       rb(`
-p [1, 2].map { _1 * 2 }
+p [1, 2].map { |x| x * 2 }
 p [1, 2].map { it * 2 }`),
     ],
     refs: [
@@ -701,7 +701,7 @@ end`),
     title: "定数畳み込み",
     body: [
       p("このまとまりの問い：同じ書き方が、なぜ違う命令になるのか。"),
-      p("1. `main.rb` に次を書いて実行する。（`1 + 2` がコンパイル時に計算されているかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`1 + 2` がコンパイル時に計算されているかを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("1 + 2").disasm
 puts RubyVM::InstructionSequence.compile('"a".freeze').disasm`),
@@ -779,7 +779,7 @@ end`),
     slug: "branch-nil",
     title: "条件分岐のコンパイル",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（条件の書き方によって、分岐の前の命令がどう変わるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。条件の書き方によって、分岐の前の命令がどう変わるかを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; !x ? :t : :f").disasm
@@ -921,7 +921,7 @@ end`),
     slug: "putobject",
     title: "putobject 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（`5` と `1` を積む命令を見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`5` と `1` を積む命令を見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("p 5").disasm
 puts RubyVM::InstructionSequence.compile("p 1").disasm`),
@@ -1034,7 +1034,7 @@ end`),
     slug: "outer-locals",
     title: "getlocal 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（同じ `x` を読む命令が、ブロックの深さでどう変わるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。同じ `x` を読む命令が、ブロックの深さでどう変わるかを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; p x").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; [1].each { p x }").disasm
@@ -1132,12 +1132,12 @@ end`),
     slug: "frame-depth",
     title: "フレーム",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（メソッドやブロックを呼ぶとフレームがどう積まれるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。メソッドやブロックを呼ぶとフレームがどう積まれるかを見てみる。"),
       rb(`
 def f(n) = n == 0 ? caller(0).size : f(n - 1)
 p f(0), f(3)
 puts [1].map { caller(0) }`),
-      p("2. `main.rb` に次を書いて実行する。（引数 `n` が命令列のどこにあるかを見てみる）"),
+      p("2. `main.rb` に次を書いて実行する。引数 `n` が命令列のどこにあるかを見てみる。"),
       rb(`puts RubyVM::InstructionSequence.compile("def f(n) = n").disasm`),
     ],
     refs: [
@@ -1202,7 +1202,7 @@ end`),
     slug: "branch",
     title: "branchif・branchunless 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（`? :` と `||` がどの命令で分岐するかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`? :` と `||` がどの命令で分岐するかを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 0; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 0; x || :or").disasm`),
@@ -1316,7 +1316,7 @@ end`),
     title: "opt_plus 命令",
     body: [
       p("このまとまりの問い：`+` や `foo.bar` は、どの経路で C の関数に届くのか。"),
-      p("1. `main.rb` に次を書いて実行する。（`+` と書いたときと `send` を使ったときの、命令の違いを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`+` と書いたときと `send` を使ったときの、命令の違いを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; y = 2; p x + y").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; y = 2; p x.send(:+, y)").disasm`),
@@ -1428,7 +1428,7 @@ end`),
     slug: "cfunc-call",
     title: "C の関数の呼び出し",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（`size` と `at` の呼び出しの命令の違いを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`size` と `at` の呼び出しの命令の違いを見てみる。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("[1].size").disasm
 puts RubyVM::InstructionSequence.compile("[1].at(0)").disasm`),
@@ -1528,7 +1528,7 @@ end`),
     slug: "module-mixins",
     title: "メソッド探索",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（include と prepend したモジュールが `ancestors` のどこに入るかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。include と prepend したモジュールが `ancestors` のどこに入るかを見てみる。"),
       rb(`
 module A; end
 module B; end
@@ -1652,7 +1652,7 @@ end`),
     slug: "method-missing",
     title: "メソッドが見つからないとき",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（private のメソッドを外から呼んだ `foo.baz` がどうなるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。private のメソッドを外から呼んだ `foo.baz` がどうなるかを見てみる。"),
       rb(`
 class Foo
   def bar = :bar
@@ -1734,7 +1734,7 @@ end`),
     slug: "ivar-cache",
     title: "インスタンス変数とキャッシュ",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（`getinstancevariable` 命令に付いているものを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`getinstancevariable` 命令に付いているものを見てみる。"),
       rb(`puts RubyVM::InstructionSequence.compile("@a = 1; @a").disasm`),
       p("2. インスタンス変数の場所は、オブジェクトの形（shape、インスタンス変数を足した順）で決まる。{{vm_insnhelper.c:1312|else { // cache miss case}} の次に下の 1 行目を足して `make` し、以下を実行する。`miss @a` は何回出るかを確認する。"),
       c(`if (id == rb_intern("@a")) fprintf(stderr, "miss @a\\n");`),
@@ -1746,7 +1746,7 @@ end
 s1 = R.new(true)
 s2 = R.new(false)
 3.times { s1.a }
-[s1, s2, s1, s2].each { _1.a }`),
+[s1, s2, s1, s2].each { |r| r.a }`),
     ],
     refs: [
       { title: "Advent of YARV: Part 11 - Class and instance variables（Kevin Newton）", url: "https://kddnewton.com/2022/12/11/advent-of-yarv-part-11.html" },
@@ -1758,7 +1758,7 @@ s2 = R.new(false)
       rb(`
 s1.a
 RubyVM.ivar_misses { 3.times { s1.a } }            #=> 0
-RubyVM.ivar_misses { [s1, s2, s1, s2].each { _1.a } } #=> 3`),
+RubyVM.ivar_misses { [s1, s2, s1, s2].each { |r| r.a } } #=> 3`),
     ],
     hints: [note("回数は `vm.c` の静的変数で数えます。`vm_insnhelper.c` から使うので、`#include \"vm_insnhelper.c\"` より前で宣言します。")],
     answer: [
@@ -1816,14 +1816,14 @@ RSpec.describe RubyVM do
       s1 = klass.new(true)
       s3 = klass.new(true)
       s1.a
-      expect(RubyVM.ivar_misses { [s1, s3, s1].each { _1.a } }).to eq(0)
+      expect(RubyVM.ivar_misses { [s1, s3, s1].each { |r| r.a } }).to eq(0)
     end
 
     it "インスタンス変数を足した順が違うと外れる" do
       s1 = klass.new(true)
       s2 = klass.new(false)
       s1.a
-      expect(RubyVM.ivar_misses { [s1, s2, s1, s2].each { _1.a } }).to eq(3)
+      expect(RubyVM.ivar_misses { [s1, s2, s1, s2].each { |r| r.a } }).to eq(3)
     end
   end
 end`),
@@ -1833,7 +1833,7 @@ end`),
     title: "proc と lambda",
     body: [
       p("このまとまりの問い：ブロックは、なぜ外の変数や `self` を見られるのか。"),
-      p("1. `main.rb` に次を書いて実行する。（proc と lambda で、足りない引数の扱いがどう違うかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。proc と lambda で、足りない引数の扱いがどう違うかを見てみる。"),
       rb(`
 pr = proc { |a, b| [a, b] }
 l = lambda { |a, b| [a, b] }
@@ -1929,7 +1929,7 @@ end`),
     slug: "block-splat",
     title: "ブロック引数の自動展開",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（配列を 1 つ渡したとき、ブロックの引数がどう受け取られるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。配列を 1 つ渡したとき、ブロックの引数がどう受け取られるかを見てみる。"),
       rb(`
 p [[1, 2]].map { |a, b| [a, b] }
 p [[1, 2]].map { |a| a }
@@ -2019,7 +2019,7 @@ end`),
     slug: "tap-eval",
     title: "ブロックと self",
     body: [
-      p("1. `main.rb` に次を書いて実行する。（`instance_exec` のブロックの中で、`self` と外の変数 `x` がどう見えるかを見てみる）"),
+      p("1. `main.rb` に次を書いて実行する。`instance_exec` のブロックの中で、`self` と外の変数 `x` がどう見えるかを見てみる。"),
       rb(`
 x = 10
 o = Object.new

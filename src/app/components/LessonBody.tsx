@@ -74,7 +74,17 @@ function Diff({ file, diff }: { file: string; diff: string }) {
               <tr key={i} className={r.cls || undefined}>
                 <td className="d-num">{r.old}</td>
                 <td className="d-num">{r.new}</td>
-                <td className="d-code">{r.cls === "d-hunk" ? r.text : `${r.sign} ${r.text}`}</td>
+                <td className="d-code">
+                  {r.cls === "d-hunk" ? (
+                    r.text
+                  ) : (
+                    <>
+                      {/* 記号はコピーされないようにする */}
+                      <span className="d-sign">{`${r.sign} `}</span>
+                      {r.text}
+                    </>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -130,6 +130,7 @@ button.link:hover { text-decoration: underline; background: none; }
 .diffblock td { padding: 0 8px; white-space: pre; vertical-align: top; }
 .diffblock .d-num { width: 1%; min-width: 3.2em; text-align: right; color: var(--faint); user-select: none; }
 .diffblock .d-code { width: 100%; }
+.diffblock .d-sign { user-select: none; }
 .diffblock .d-add { background: #e6ffec; }
 .diffblock .d-add .d-num { background: #ccffd8; }
 .diffblock .d-del { background: #ffebe9; }
