@@ -62,7 +62,7 @@ export default function Workbench({ current, specs, ref }: Props) {
   // C のファイル: 元の内容と、書き換えたものだけ
   const [originals, setOriginals] = useState<Record<string, string>>({});
   const [edits, setEdits] = useState<Record<string, string>>({});
-  // Ruby のファイル: 元の内容と、書き換えたものだけ。main.rb は最初は空で、全ての章で同じものを使う
+  // Ruby のファイル: 元の内容と、書き換えたものだけ。main.rb の最初の中身は空で、全ての章で同じものを使う
   const rbOriginals = useMemo(() => {
     const o: Record<string, string> = { [MAIN]: "" };
     for (const s of specs) o[specPath(s.slug)] = s.spec;
@@ -123,6 +123,20 @@ export default function Workbench({ current, specs, ref }: Props) {
     loadOriginal(MAKEFILE)
       .then((text) => setOriginals((o) => ({ ...o, [MAKEFILE]: text })))
       .catch((err) => setLoadError(String(err.message ?? err)));
+    // 最初の読み込みが落ち着いたら、C のソースを全部先に取っておく（開いたときに「読み込み中」を出さない）。
+    // 失敗しても、開いたときにもう一度取りに行く
+    const timer = setTimeout(() => {
+      loadManifest()
+        .then((m) => {
+          for (const { name } of m.editable) {
+            loadOriginal(name)
+              .then((text) => setOriginals((o) => (o[name] === undefined ? { ...o, [name]: text } : o)))
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   // 開いている C のファイルの元の内容を読み込む
