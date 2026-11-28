@@ -947,7 +947,7 @@ puts RubyVM::InstructionSequence.compile("p [5, 5]").disasm`),
     refs: [
       { title: "Advent of YARV: Part 1 - Pushing onto the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/01/advent-of-yarv-part-1.html" },
       { title: "Advent of YARV: Part 4 - Creating objects from the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/04/advent-of-yarv-part-4.html" },
-      { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
+      { title: "YARV’s Internal Stack and Your Ruby Stack（Pat Shaughnessy）", url: "https://patshaughnessy.net/2025/11/10/yarvs-internal-stack-and-your-ruby-stack" },
     ],
     task: [
       p("ブロックの中で `putobject` が積んだ値を、順に配列で返す `RubyVM.putobjects` を作る。"),
