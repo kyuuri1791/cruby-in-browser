@@ -78,7 +78,7 @@ p defined?(RUBY_COPYRIGHT)`),
     task: [
       p("`RUBY_DESCRIPTION` の先頭の `ruby` を `myruby` に変える。"),
       rb(`
-RUBY_DESCRIPTION #=> "myruby 4.1.0dev (...) +PRISM [wasm32-wasi]"`),
+p RUBY_DESCRIPTION #=> "myruby 4.1.0dev (...) +PRISM [wasm32-wasi]"`),
     ],
     answer: [
       diff("ruby/version.c", `
@@ -135,7 +135,7 @@ p 1 + 2`),
     task: [
       p("全角の `＋` を、`+` と同じ `PLUS` の字句にする。"),
       rb(`
-Ruby::Prism.lex("1 ＋ 2").value.map { |t, _| t.type } #=> [:INTEGER, :PLUS, :INTEGER, :EOF]`),
+p Ruby::Prism.lex("1 ＋ 2").value.map { |t, _| t.type } #=> [:INTEGER, :PLUS, :INTEGER, :EOF]`),
     ],
     hints: [
       note("どの記号にも当たらなかった文字は、`parser_lex` の `switch` の `default:` で識別子として読まれます。"),
@@ -209,8 +209,8 @@ p "a" + "b"`),
     task: [
       p("前の章の `＋` を、`+` と同じメソッド呼び出しにする。"),
       rb(`
-1 ＋ 2 #=> 3
-Ruby::Prism.parse("1 ＋ 2").value.statements.body[0].name #=> :+`),
+p 1 ＋ 2 #=> 3
+p Ruby::Prism.parse("1 ＋ 2").value.statements.body[0].name #=> :+`),
     ],
     hints: [
       note("前の章の課題の変更も要ります。前の章の手順 2 で、字句を `MINUS` にしても `p 1 + 2` が 3 になったのはなぜかを考えてみてください。"),
@@ -273,10 +273,10 @@ p [2].size`),
     task: [
       p("コンパイラで、整数リテラルの `1 + 2` を `putobject 4` にする。"),
       rb(`
-1 + 2         #=> 4
+p 1 + 2         #=> 4
 x = 1
-x + 2         #=> 3
-1.send(:+, 2) #=> 3`),
+p x + 2         #=> 3
+p 1.send(:+, 2) #=> 3`),
     ],
     hints: [
       note("3 で書き換えた `switch (method_id)` に、`+`（`idPLUS`）の場合を足します。"),
@@ -344,9 +344,9 @@ p "a" + "b"`),
       rb(`
 x = 1
 y = 2
-x + y         #=> 4
-1 + 2         #=> 4
-x.send(:+, y) #=> 3`),
+p x + y         #=> 4
+p 1 + 2         #=> 4
+p x.send(:+, y) #=> 3`),
     ],
     hints: [note("整数の 1 は `INT2FIX(1)` です。`VALUE` どうしは `==` で比べられます。")],
     answer: [
@@ -405,8 +405,8 @@ p 1.send(:+, 2)`),
     task: [
       p("`Integer#+` の C の関数で、1 と 2 を足したときだけ 4 を返す。"),
       rb(`
-1.send(:+, 2) #=> 4
-1 + 2         #=> 3`),
+p 1.send(:+, 2) #=> 4
+p 1 + 2         #=> 3`),
     ],
     hints: [note("`numeric.c` の `Init_Numeric` で `\"+\"` を登録している行から、関数を探してください。")],
     answer: [
@@ -480,8 +480,8 @@ lex "1 if x"`),
     task: [
       p("`もし` を `if` と同じ予約語にする。"),
       rb(`
-もし true then :t else :f end #=> :t
-:m もし true                  #=> :m`),
+p(もし true then :true else :false end) #=> :true
+p :ok もし true                         #=> :ok`),
     ],
     hints: [
       note("予約語は `pm_keyword_find` で表から探しています。"),
@@ -504,12 +504,12 @@ RSpec.describe "予約語の もし" do
 
   it "文の頭では KEYWORD_IF になる" do
     expect(types("もし x then 1 end").first).to eq(:KEYWORD_IF)
-    expect(eval("もし true then :t else :f end")).to eq(:t)
+    expect(eval("もし true then :true else :false end")).to eq(:true)
   end
 
   it "後ろに置くと KEYWORD_IF_MODIFIER になる" do
     expect(types("1 もし x")[1]).to eq(:KEYWORD_IF_MODIFIER)
-    expect(eval(":m もし true")).to eq(:m)
+    expect(eval(":ok もし true")).to eq(:ok)
   end
 
   it "もしも は識別子のまま" do
@@ -523,8 +523,7 @@ end`),
     body: [
       p("1. `main.rb` に次を書いて実行する。suffix の付いた数値がどんな字句になるかを見てみる。"),
       rb(`
-p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { |t, _| t.type }
-p Ruby::Prism.lex("3k").value.map { |t, _| t.type }`),
+p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { |t, _| t.type }`),
       p("2. 小さな 10 進の整数は、字句解析の途中で {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の行が 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、以下を実行する。どれが変わり、どれが変わらないかを確認する。"),
       rb(`
 p 12
@@ -538,10 +537,10 @@ p 12345678901234567890`),
       { title: "リテラル（るりま）", url: "https://docs.ruby-lang.org/ja/latest/doc/spec=2fliteral.html" },
     ],
     task: [
-      p("整数の後ろの `k` を 1000 倍の意味にする。"),
+      p("整数の後ろに `k` を付けたとき、1000 倍の意味として実行できるようにする。"),
       rb(`
-3k      #=> 3000
-12k + 1 #=> 12001`),
+p 3k      #=> 3000
+p 12k + 1 #=> 12001`),
     ],
     hints: [
       note("2 で見たとおり、小さな 10 進の整数は字句解析の途中で値まで計算しています（`parser->integer.value`）。その値は、`pm_integer_node_create` が `parser->integer.start == token->start` のときに使います。"),
@@ -600,9 +599,9 @@ p 1 - 2 * 3`),
     task: [
       p("`**` を、`*` と同じ優先順位の左結合にする。"),
       rb(`
-2 ** 3 ** 2 #=> 64（(2 ** 3) ** 2）
-2 * 3 ** 2  #=> 36（(2 * 3) ** 2）
-1 + 2 ** 2  #=> 5`),
+p 2 ** 3 ** 2 #=> 64（(2 ** 3) ** 2）
+p 2 * 3 ** 2  #=> 36（(2 * 3) ** 2）
+p 1 + 2 ** 2  #=> 5`),
     ],
     hints: [note("`pm_binding_powers` の `LEFT_ASSOCIATIVE` と `RIGHT_ASSOCIATIVE` の定義を見比べてください。")],
     answer: [
@@ -663,9 +662,9 @@ p [1, 2].map { it * 2 }`),
     task: [
       p("ブロックの中の `that` を、`it` と同じ意味にする。"),
       rb(`
-[1, 2].map { that * 2 } #=> [2, 4]
+p [1, 2].map { that * 2 } #=> [2, 4]
 that = 5
-that                    #=> 5`),
+p that                    #=> 5`),
     ],
     hints: [note("3 で変えた行が、名前が `it` かどうかをどの関数で確かめているかを見てください。")],
     answer: [
@@ -726,7 +725,7 @@ puts RubyVM::InstructionSequence.compile("1 + 2").disasm
 # 0000 putobject                              3
 # 0002 leave
 x = 1
-x + 2 #=> 3（opt_plus のまま）`),
+p x + 2 #=> 3（opt_plus のまま）`),
       p("できたら、2 のコードをもう一度実行する。結果は変わるか。"),
     ],
     hints: [
@@ -781,9 +780,9 @@ end`),
     body: [
       p("1. `main.rb` に次を書いて実行する。条件の書き方によって、分岐の前の命令がどう変わるかを見てみる。"),
       rb(`
-puts RubyVM::InstructionSequence.compile("x = 1; x ? :t : :f").disasm
-puts RubyVM::InstructionSequence.compile("x = 1; !x ? :t : :f").disasm
-puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :n : :v").disasm`),
+puts RubyVM::InstructionSequence.compile("x = 1; x ? :true : :false").disasm
+puts RubyVM::InstructionSequence.compile("x = 1; !x ? :true : :false").disasm
+puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :nil : :not_nil").disasm`),
       p("2. 条件分岐の命令は `pm_compile_branch_condition` が出していて、最後の {{prism_compile.c:1114|PUSH_INSNL(ret, location, branchunless, else_label);}} の行が `branchunless` を出している。同じ関数の `switch` で、`&&` や `||` の条件をどう分岐に直しているかを読む。"),
     ],
     refs: [
@@ -794,12 +793,12 @@ puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :n : :v").disasm`),
     task: [
       p("条件が `x.nil?` のときは、`opt_nil_p` を使わずに `branchnil` 命令で分岐する。"),
       rb(`
-puts RubyVM::InstructionSequence.compile("x = nil; x.nil? ? :n : :v").disasm
+puts RubyVM::InstructionSequence.compile("x = nil; x.nil? ? :nil : :not_nil").disasm
 # 0003 getlocal_WC_0    x@0
 # 0005 branchnil        9
 # …
 x = nil
-x.nil? ? :n : :v #=> :n`),
+p(x.nil? ? :nil : :not_nil) #=> :nil`),
     ],
     hints: [
       note("`pm_compile_branch_condition` に `PM_CALL_NODE` の場合を足します。`branchnil` は、積まれた値が `nil` なら飛びます。"),
@@ -830,14 +829,14 @@ RSpec.describe "x.nil? の分岐" do
   def insns(code) = RubyVM::InstructionSequence.compile(code).to_a.last.grep(Array).map(&:first)
 
   it "branchnil で分岐する" do
-    expect(insns("x = nil; x.nil? ? :n : :v")).to include(:branchnil)
-    expect(insns("x = nil; x.nil? ? :n : :v")).not_to include(:opt_nil_p)
+    expect(insns("x = nil; x.nil? ? :nil : :not_nil")).to include(:branchnil)
+    expect(insns("x = nil; x.nil? ? :nil : :not_nil")).not_to include(:opt_nil_p)
   end
 
   it "結果は変わらない" do
-    expect(eval("x = nil; x.nil? ? :n : :v")).to eq(:n)
-    expect(eval("x = 1; x.nil? ? :n : :v")).to eq(:v)
-    expect(eval("x = false; x.nil? ? :n : :v")).to eq(:v)
+    expect(eval("x = nil; x.nil? ? :nil : :not_nil")).to eq(:nil)
+    expect(eval("x = 1; x.nil? ? :nil : :not_nil")).to eq(:not_nil)
+    expect(eval("x = false; x.nil? ? :nil : :not_nil")).to eq(:not_nil)
   end
 
   it "条件でない x.nil? はそのまま" do
@@ -861,10 +860,12 @@ end`),
     task: [
       p("呼び出し元のフレームで、スタックに積まれている値の数を返す `RubyVM.stack_depth` を作る（ローカル変数は数えない）。"),
       rb(`
-x = [1, 2, RubyVM.stack_depth] #=> [1, 2, 2]
-y = 1 + RubyVM.stack_depth     #=> 2
+x = [1, 2, RubyVM.stack_depth]
+p x    #=> [1, 2, 2]
+y = 1 + RubyVM.stack_depth
+p y    #=> 2
 def f(a, b) = RubyVM.stack_depth
-f(1, 2)                        #=> 0`),
+p f(1, 2) #=> 0`),
     ],
     hints: [
       note("C の関数の中では、`GET_EC()->cfp` がその関数のフレームで、`RUBY_VM_PREVIOUS_CONTROL_FRAME` で呼び出し元のフレームになります。"),
@@ -948,8 +949,8 @@ puts RubyVM::InstructionSequence.compile("p [5, 5]").disasm`),
     task: [
       p("ブロックの中で `putobject` が積んだ値を、順に配列で返す `RubyVM.putobjects` を作る。"),
       rb(`
-RubyVM.putobjects { x = 5; y = :a } #=> [5, :a]
-RubyVM.putobjects { x = 0; y = 1 }  #=> [0, 1]`),
+p RubyVM.putobjects { x = 5; y = :a } #=> [5, :a]
+p RubyVM.putobjects { x = 0; y = 1 }  #=> [0, 1]`),
     ],
     hints: [
       note("値を入れる配列は `vm.c` の静的変数にします。`vm.inc` は `vm_exec.c` を通して `vm.c` に `#include` されているので、`#include \"vm_exec.c\"` より前で宣言すれば `vm.inc` から使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
@@ -1057,9 +1058,9 @@ p x
       p("ブロックの中で、外側のスコープのローカル変数を読んだ回数を返す `RubyVM.outer_reads` を作る。"),
       rb(`
 x = 1
-RubyVM.outer_reads { x + x }          #=> 2
-RubyVM.outer_reads { y = 1; y }       #=> 0
-RubyVM.outer_reads { [1].each { x } } #=> 1`),
+p RubyVM.outer_reads { x + x }          #=> 2
+p RubyVM.outer_reads { y = 1; y }       #=> 0
+p RubyVM.outer_reads { [1].each { x } } #=> 1`),
     ],
     hints: [
       note("回数は `vm.c` の静的変数で数えます。`vm.inc` は `vm_exec.c` を通して `vm.c` に `#include` されているので、`#include \"vm_exec.c\"` より前で宣言すれば `vm.inc` から使えます。"),
@@ -1148,9 +1149,9 @@ puts [1].map { caller(0) }`),
       p("呼び出し元のフレームより古いフレームの数を返す `RubyVM.frame_depth` を作る。"),
       rb(`
 def f(n) = n == 0 ? RubyVM.frame_depth : f(n - 1)
-f(3) - f(0)                       #=> 3
+p f(3) - f(0)                           #=> 3
 base = RubyVM.frame_depth
-[1].map { RubyVM.frame_depth - base } #=> [2]`),
+p [1].map { RubyVM.frame_depth - base } #=> [2]`),
     ],
     hints: [note("フレームは配列のように並んでいて、`RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)` は `cfp + 1` です。いちばん古いフレームの次は `RUBY_VM_END_CONTROL_FRAME(ec)` です。")],
     answer: [
@@ -1204,18 +1205,18 @@ end`),
     body: [
       p("1. `main.rb` に次を書いて実行する。`? :` と `||` がどの命令で分岐するかを見てみる。"),
       rb(`
-puts RubyVM::InstructionSequence.compile("x = 0; x ? :t : :f").disasm
+puts RubyVM::InstructionSequence.compile("x = 0; x ? :true : :false").disasm
 puts RubyVM::InstructionSequence.compile("x = 0; x || :or").disasm`),
       p("2. 真偽は `RTEST`（`nil` と `false` だけが偽）で判定していて、{{vm.inc:3355|if (!RTEST(val)) {}} の行は `branchunless` の中身。この行を下に変えて `make` し、以下を実行する。どれの結果が変わるかを確認する。"),
       c(`if (!RTEST(val) || val == INT2FIX(0)) {`),
       rb(`
 x = 0
-p(x ? :t : :f)
+p(x ? :true : :false)
 p(x && :and)
 p(x || :or)
-p(0 ? :t : :f)`),
-      p("3. `main.rb` に次を書いて実行する。2 で `0 ? :t : :f` が変わらなかったのはなぜか。"),
-      rb(`puts RubyVM::InstructionSequence.compile("0 ? :t : :f").disasm`),
+p(0 ? :true : :false)`),
+      p("3. `main.rb` に次を書いて実行する。2 で `0 ? :true : :false` が変わらなかったのはなぜか。"),
+      rb(`puts RubyVM::InstructionSequence.compile("0 ? :true : :false").disasm`),
     ],
     refs: [
       { title: "Advent of YARV: Part 14 - Branching（Kevin Newton）", url: "https://kddnewton.com/2022/12/14/advent-of-yarv-part-14.html" },
@@ -1226,10 +1227,10 @@ p(0 ? :t : :f)`),
       rb(`
 x = 0
 RubyVM.falsy_zero = true
-x ? :t : :f #=> :f
-x || :or    #=> :or
+p(x ? :true : :false) #=> :false
+p(x || :or)           #=> :or
 RubyVM.falsy_zero = false
-x ? :t : :f #=> :t`),
+p(x ? :true : :false) #=> :true`),
     ],
     hints: [
       note("切り替えの値は `vm.c` の静的変数にします。`#include \"vm_exec.c\"` より前で宣言すれば `vm.inc` から使えます。"),
@@ -1288,9 +1289,9 @@ RSpec.describe RubyVM do
     it "true の間は、条件の 0 が偽になる" do
       x = zero
       RubyVM.falsy_zero = true
-      r = x ? :t : :f
+      r = x ? :true : :false
       RubyVM.falsy_zero = false
-      expect(r).to eq(:f)
+      expect(r).to eq(:false)
     end
 
     it "true の間は、|| の左の 0 が偽になる" do
@@ -1305,8 +1306,8 @@ RSpec.describe RubyVM do
       x = zero
       RubyVM.falsy_zero = true
       RubyVM.falsy_zero = false
-      r = x ? :t : :f
-      expect(r).to eq(:t)
+      r = x ? :true : :false
+      expect(r).to eq(:true)
     end
   end
 end`),
@@ -1347,9 +1348,9 @@ a = 1
 b = 2
 before = RubyVM.opt_plus_count
 a + b
-RubyVM.opt_plus_count - before #=> 1
+p RubyVM.opt_plus_count - before #=> 1
 a.send(:+, b)
-RubyVM.opt_plus_count - before #=> 1`),
+p RubyVM.opt_plus_count - before #=> 1`),
     ],
     hints: [note("回数は `vm_insnhelper.c` の静的変数で数えます。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`vm.c` の `Init_VM` から、その変数を読む関数を登録できます。`rb_cRubyVM` を作った行より後に書いてください。")],
     answer: [
@@ -1455,8 +1456,8 @@ p 1 + 2
     task: [
       p("ブロックの中で、2 の行を通って呼ばれた C の関数のメソッド名を、順に配列で返す `RubyVM.cfunc_calls` を作る。"),
       rb(`
-RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
-RubyVM.cfunc_calls { [1].size }                 #=> []`),
+p RubyVM.cfunc_calls { [1, 2].at(0); "a".upcase } #=> [:at, :upcase]
+p RubyVM.cfunc_calls { [1].size }                 #=> []`),
     ],
     hints: [
       note("値を入れる配列は `vm.c` の静的変数にします。`vm_insnhelper.c` は `vm.c` に `#include` されているので、`#include \"vm_insnhelper.c\"` より前で宣言すれば使えます。GC に回収されないよう、`Init_VM` で `rb_gc_register_address` に渡してください。"),
@@ -1582,8 +1583,8 @@ class C
   prepend B
 end
 
-C.ancestors #=> [B, C, A, Object, Kernel, BasicObject]
-C.mixins    #=> [B, A, Kernel]`),
+p C.ancestors #=> [B, C, A, Object, Kernel, BasicObject]
+p C.mixins    #=> [B, A, Kernel]`),
     ],
     hints: [note("`ancestors` は `object.c` の `InitVM_Object` で登録されています。関数は `class.c` に書き、`object.c` で同じように登録してください。`object.c` には、`InitVM_Object` より前に関数の宣言が要ります。")],
     answer: [
@@ -1688,8 +1689,14 @@ begin; Object.new.qux; rescue NoMethodError => e; p e; end`),
     task: [
       p("private のメソッドを外から呼んだときは、`method_missing` に回さず、すぐに `NoMethodError` を投げる。"),
       rb(`
-foo.baz     #=> private method 'baz' called for Foo (NoMethodError)
-foo.unknown #=> [:missing, :unknown]`),
+class Foo
+  def method_missing(name, *args) = [:missing, name]
+  private def baz = :baz
+end
+
+foo = Foo.new
+p foo.unknown #=> [:missing, :unknown]
+p foo.baz     #=> private method 'baz' called for Foo (NoMethodError)`),
     ],
     hints: [
       note("呼び出す相手の可視性（public・private・protected）は、`vm_call_method` で確かめています。"),
@@ -1756,9 +1763,16 @@ s2 = R.new(false)
     task: [
       p("ブロックの中で、インスタンス変数を読むときのキャッシュが外れた回数を返す `RubyVM.ivar_misses` を作る。"),
       rb(`
+class R
+  def initialize(first) = first ? (@a = 1; @b = 2) : (@b = 2; @a = 1)
+  def a = @a
+end
+
+s1 = R.new(true)
+s2 = R.new(false)
 s1.a
-RubyVM.ivar_misses { 3.times { s1.a } }            #=> 0
-RubyVM.ivar_misses { [s1, s2, s1, s2].each { |r| r.a } } #=> 3`),
+p RubyVM.ivar_misses { 3.times { s1.a } }                 #=> 0
+p RubyVM.ivar_misses { [s1, s2, s1, s2].each { |r| r.a } } #=> 3`),
     ],
     hints: [note("回数は `vm.c` の静的変数で数えます。`vm_insnhelper.c` から使うので、`#include \"vm_insnhelper.c\"` より前で宣言します。")],
     answer: [
@@ -1862,8 +1876,8 @@ class Foo
   define_method(:strict, ->(a, b) { [a, b] })
 end
 
-Foo.new.pair(1)   #=> [1, nil]
-Foo.new.strict(1) #=> ArgumentError`),
+p Foo.new.pair(1)   #=> [1, nil]
+p Foo.new.strict(1) #=> ArgumentError`),
     ],
     hints: [note("`vm_call_iseq_bmethod` は lambda のときだけ使うようにします。proc のときは `vm_call_noniseq_bmethod` から `vm_invoke_bmethod` に進むので、そこで proc の `is_lambda` を渡します。")],
     answer: [
@@ -1948,9 +1962,9 @@ p((lambda { |a, b| [a, b] }.call([1, 2]) rescue $!))`),
       p("`RubyVM.block_autosplat = false` の間だけ、ブロックの引数を自動で展開しない。"),
       rb(`
 RubyVM.block_autosplat = false
-[[1, 2]].map { |a, b| [a, b] } #=> [[[1, 2], nil]]
+p [[1, 2]].map { |a, b| [a, b] } #=> [[[1, 2], nil]]
 RubyVM.block_autosplat = true
-[[1, 2]].map { |a, b| [a, b] } #=> [[1, 2]]`),
+p [[1, 2]].map { |a, b| [a, b] } #=> [[1, 2]]`),
     ],
     hints: [note("切り替えの値は `vm.c` の静的変数にします。`vm_insnhelper.c` から使うので、`#include \"vm_insnhelper.c\"` より前で宣言します。")],
     answer: [
@@ -2033,8 +2047,8 @@ p o.instance_exec { [equal?(o), x] }`),
     task: [
       p("ブロックの中の `self` をレシーバにして実行し、レシーバを返す `Kernel#tap_eval` を作る。"),
       rb(`
-[1, 2].tap_eval { push(3) } #=> [1, 2, 3]
-[1, 2].tap { push(3) }      #=> NoMethodError`),
+p [1, 2].tap_eval { push(3) } #=> [1, 2, 3]
+p [1, 2].tap { push(3) }      #=> NoMethodError`),
     ],
     hints: [note("`instance_exec` の本体は `vm_eval.c` の `rb_obj_instance_exec` です。C の関数から呼ぶと、その関数に渡されたブロックがそのまま使われます。")],
     answer: [
@@ -2104,12 +2118,12 @@ p Object.new.object_id`),
     task: [
       p("即値なら `true`、そうでなければ `false` を返す `Object#immediate?` を作る。"),
       rb(`
-1.immediate?       #=> true
-:sym.immediate?    #=> true
-nil.immediate?     #=> true
-(2**30).immediate? #=> false
-1.5.immediate?     #=> false
-"str".immediate?   #=> false`),
+p 1.immediate?         #=> true
+p :sym.immediate?      #=> true
+p nil.immediate?       #=> true
+p((2**30).immediate?)  #=> false
+p 1.5.immediate?       #=> false
+p "str".immediate?     #=> false`),
     ],
     hints: [note("即値かどうかは `RB_SPECIAL_CONST_P(obj)` で、C の真偽値を Ruby の値にするのは `RBOOL(…)` です。登録は `InitVM_Object` に書いてください。")],
     answer: [
@@ -2191,9 +2205,9 @@ p [1, 2, 3].dig(1)`),
     task: [
       p("`Array#second` を作る。"),
       rb(`
-[1, 2, 3].second #=> 2
-[1].second       #=> nil
-[].second        #=> nil`),
+p [1, 2, 3].second #=> 2
+p [1].second       #=> nil
+p [].second        #=> nil`),
     ],
     hints: [
       note("メソッドの登録は `rb_define_method(クラス, \"名前\", 関数, 引数の数)` です。"),
@@ -2265,9 +2279,9 @@ p 7.send(:*, 3)`),
     task: [
       p("3 倍した値を返す `Integer#triple` を作る。"),
       rb(`
-7.triple       #=> 21
--5.triple      #=> -15
-(2**70).triple #=> 3541774862152233910272`),
+p 7.triple       #=> 21
+p(-5.triple)     #=> -15
+p((2**70).triple) #=> 3541774862152233910272`),
     ],
     hints: [
       note("`rb_int_mul(x, y)` は Integer の `x * y` を返します。"),
@@ -2345,13 +2359,13 @@ fprintf(stderr, "call0 %s\\n", rb_id2name(me->def->original_id));`),
       p("大文字にして `!` を付けた文字列を返す `String#shout` を作る。レシーバは変えない。"),
       rb(`
 s = "hello"
-s.shout #=> "HELLO!"
-s       #=> "hello"
+p s.shout #=> "HELLO!"
+p s       #=> "hello"
 
 class Loud < String
   def upcase = "LOUD"
 end
-Loud.new("hello").shout #=> "LOUD!"`),
+p Loud.new("hello").shout #=> "LOUD!"`),
     ],
     hints: [
       note("C から Ruby のメソッドを呼ぶには `rb_funcall(recv, rb_intern(\"upcase\"), 0)` のように書きます。"),
@@ -2420,9 +2434,9 @@ p({ a: 1, b: 2, c: 3 }.values)`),
     task: [
       p("全ての value の合計を返す `Hash#sum_values` を作る。"),
       rb(`
-{ a: 1, b: 2, c: 3 }.sum_values #=> 6
-{ x: 1, y: 0.5 }.sum_values     #=> 1.5
-{}.sum_values                   #=> 0`),
+p({ a: 1, b: 2, c: 3 }.sum_values) #=> 6
+p({ x: 1, y: 0.5 }.sum_values)     #=> 1.5
+p({}.sum_values)                   #=> 0`),
     ],
     hints: [note("`rb_hash_foreach(hash, func, arg)` は、要素ごとに `func(key, value, arg)` を呼びます。")],
     answer: [
@@ -2507,8 +2521,8 @@ p nil.inspect`),
     task: [
       p("`nil.to_s` が `\"(nil)\"` を返すようにする。"),
       rb(`
-nil.to_s   #=> "(nil)"
-"x=#{nil}" #=> "x=(nil)"`),
+p nil.to_s   #=> "(nil)"
+p "x=#{nil}" #=> "x=(nil)"`),
     ],
     hints: [note("C の文字列から Ruby の String を作るには `rb_str_new_cstr(\"hoge\")` のように書きます。")],
     answer: [
@@ -2557,9 +2571,9 @@ p l.call(1)`),
     task: [
       p("lambda なら `:lambda`、そうでなければ `:proc` を返す `Proc#kind` を作る。"),
       rb(`
--> {}.kind                 #=> :lambda
-proc {}.kind               #=> :proc
-method(:puts).to_proc.kind #=> :lambda`),
+p(-> {}.kind)                #=> :lambda
+p proc {}.kind               #=> :proc
+p method(:puts).to_proc.kind #=> :lambda`),
     ],
     hints: [note("シンボルは `ID2SYM(rb_intern(\"lambda\"))` で作れます。登録は `Init_Proc` の `\"lambda?\"` の行の近くに書いてください。")],
     answer: [
@@ -2634,15 +2648,15 @@ TracePoint.new(:call, :c_call) { |tp| p [tp.event, tp.method_id] }.enable { c.x;
       p("インスタンス変数の値を返す `名前?` のメソッドを定義する `Module#attr_predicate` を作る。戻り値は、定義したメソッド名の配列。"),
       rb(`
 class User
-  attr_predicate :admin, :guest #=> [:admin?, :guest?]
+  p attr_predicate(:admin, :guest) #=> [:admin?, :guest?]
 
   def initialize(admin)
     @admin = admin
   end
 end
 
-User.new(true).admin? #=> true
-User.new(true).guest? #=> nil`),
+p User.new(true).admin? #=> true
+p User.new(true).guest? #=> nil`),
     ],
     hints: [note("`rb_add_method` は `method.h` で宣言されているので、`object.c` に `#include \"method.h\"` を足します。引数から ID を作るのは、`attr_reader` と同じく `id_for_attr` で書けます。登録は `InitVM_Object` で行うので、関数はそれより前に書いてください。")],
     answer: [
@@ -2740,13 +2754,13 @@ p Foo.private_method_defined?(:c)`),
       p("`define_method` と同じ引数を受け取り、いつも private のメソッドを定義する `Module#define_private_method` を作る。戻り値は、定義したメソッド名のシンボル。"),
       rb(`
 class Vault
-  define_private_method(:secret) { 42 } #=> :secret
+  p define_private_method(:secret) { 42 } #=> :secret
 
   def peek = secret
 end
 
-Vault.new.peek   #=> 42
-Vault.new.secret #=> NoMethodError`),
+p Vault.new.peek   #=> 42
+p Vault.new.secret #=> NoMethodError`),
     ],
     hints: [note("`define_method` は `Init_Proc` で登録されています。")],
     answer: [
@@ -2824,9 +2838,9 @@ p Array(o)`),
     task: [
       p("メソッドがあれば呼んだ結果を、なければ `nil` を返す `Kernel#try` を作る。"),
       rb(`
-"ruby".try(:upcase)      #=> "RUBY"
-1.try(:+, 2)             #=> 3
-nil.try(:no_such_method) #=> nil`),
+p "ruby".try(:upcase)      #=> "RUBY"
+p 1.try(:+, 2)             #=> 3
+p nil.try(:no_such_method) #=> nil`),
     ],
     hints: [note("`vm_eval.c` の `rb_check_funcall(recv, mid, argc, argv)` は、呼べなければ `Qundef` を返します。`Qundef` かどうかは `UNDEF_P(v)` で確かめます。登録は `Init_vm_eval` の `\"public_send\"` の行の近くに書いてください。")],
     answer: [

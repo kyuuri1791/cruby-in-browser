@@ -100,7 +100,7 @@ export default function App({ lessons, initialSlug }: { lessons: Lesson[]; initi
               {lesson.task && (
                 <section className="task">
                   <h2>課題</h2>
-                  <LessonBody blocks={lesson.task} onLocate={locate} />
+                  <LessonBody blocks={lesson.task} copyable onLocate={locate} />
                 </section>
               )}
               {lesson.hints && (

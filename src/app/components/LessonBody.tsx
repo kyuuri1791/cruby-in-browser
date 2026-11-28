@@ -94,7 +94,7 @@ function Diff({ file, diff }: { file: string; diff: string }) {
   );
 }
 
-/** copyable: コードブロックにコピーのボタンを付ける（課題の前の手順だけ） */
+/** copyable: コードブロックにコピーのボタンを付ける（手順と課題） */
 export default function LessonBody({ blocks, copyable = false, onLocate }: { blocks: Block[]; copyable?: boolean; onLocate?: Locate }) {
   return (
     <>

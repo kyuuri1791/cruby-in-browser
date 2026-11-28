@@ -33,7 +33,9 @@ const theme = EditorView.theme({
   "&": { height: "100%", fontSize: "13px", backgroundColor: "var(--code-bg)", color: "var(--fg)" },
   ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.5" },
   ".cm-gutters": { backgroundColor: "var(--code-bg)", color: "var(--muted)", borderRight: "1px solid var(--border)" },
-  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "var(--active-line)" },
+  // 現在行の背景は選択の色の上に重なるので、半透明にする（不透明だと全選択で最後の行だけ選択の色が見えない）
+  ".cm-activeLine": { backgroundColor: "rgba(27, 31, 36, 0.04)" },
+  ".cm-activeLineGutter": { backgroundColor: "var(--active-line)" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--selection) !important" },
   ".cm-cursor": { borderLeftColor: "var(--fg)" },
   // 検索ウィジェットは VS Code のようにエディタ右上に浮かせる（本文を押し下げない）
