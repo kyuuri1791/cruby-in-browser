@@ -361,6 +361,7 @@ export default function Workbench({ current, specs, ref }: Props) {
               ref={editor}
               docKey={file}
               value={text}
+              original={readOnly || isRuby(file) ? undefined : original}
               language={file === MAKEFILE || file === DOT_RSPEC ? "make" : isRuby(file) ? "ruby" : "c"}
               readOnly={readOnly}
               onChange={onChange}

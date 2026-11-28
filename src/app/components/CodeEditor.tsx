@@ -11,6 +11,7 @@ import { findWidget, openFind } from "./findWidget";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentUnit, StreamLanguage } from "@codemirror/language";
 import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { cpp } from "@codemirror/lang-cpp";
+import { changeGutter, refreshChanges } from "./changeGutter";
 
 export type CodeEditorHandle = {
   /** 指定した行へ移動して選択する */
@@ -22,6 +23,8 @@ type Props = {
   /** ファイルが変わったら作り直す */
   docKey: string;
   value: string;
+  /** 元の内容。変えた行に印を付ける */
+  original?: string;
   /** c: Ruby の C のソース / ruby: Ruby のファイル / make: Makefile と .rspec */
   language?: "c" | "ruby" | "make";
   readOnly?: boolean;
@@ -38,14 +41,20 @@ const theme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "var(--active-line)" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--selection) !important" },
   ".cm-cursor": { borderLeftColor: "var(--fg)" },
+  // 変えた行の印（changeGutter）
+  ".cm-change-gutter .cm-gutterElement": { width: "3px", padding: "0" },
+  ".cm-change-add": { backgroundColor: "#2da44e" },
+  ".cm-change-mod": { backgroundColor: "#0969da" },
+  ".cm-change-del": { background: "linear-gradient(#cf222e, #cf222e) top / 100% 3px no-repeat" },
   // 検索ウィジェットは VS Code のようにエディタ右上に浮かせる（本文を押し下げない）
   ".cm-panels.cm-panels-top": { position: "absolute", top: "0", right: "18px", left: "auto", border: "none", backgroundColor: "transparent", zIndex: "10" },
   ".cm-searchMatch": { backgroundColor: "var(--search-match)", borderRadius: "2px" },
   ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "var(--search-current)", outline: "1px solid var(--search-current-border)" },
 });
 
-export default function CodeEditor({ docKey, value, language = "c", readOnly = false, onChange, ref }: Props) {
+export default function CodeEditor({ docKey, value, original, language = "c", readOnly = false, onChange, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const originalRef = useRef(original);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -60,7 +69,7 @@ export default function CodeEditor({ docKey, value, language = "c", readOnly = f
       state: EditorState.create({
         doc: value,
         extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(),
+          lineNumbers(), changeGutter(() => originalRef.current), highlightActiveLineGutter(), highlightSpecialChars(), history(), drawSelection(),
           highlightActiveLine(), bracketMatching(), highlightSelectionMatches(),
           // Ruby の C のソースはタブ幅 8・字下げ 4、Ruby のコードは字下げ 2
           // Makefile のレシピはタブで始める必要がある
@@ -84,6 +93,11 @@ export default function CodeEditor({ docKey, value, language = "c", readOnly = f
     // value は最初の内容としてだけ使う
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);
+
+  useEffect(() => {
+    originalRef.current = original;
+    view.current?.dispatch({ effects: refreshChanges.of(null) });
+  }, [original]);
 
   // 外から内容が差し替えられたとき（「元に戻す」など）
   useEffect(() => {

@@ -524,7 +524,7 @@ end`),
       p("1. `main.rb` に次を書いて実行する。suffix の付いた数値がどんな字句になるかを見てみる。"),
       rb(`
 p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { |t, _| t.type }`),
-      p("2. 小さな 10 進の整数は、字句解析の途中で {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の行が 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、以下を実行する。どれが変わり、どれが変わらないかを確認する。"),
+      p("2. 大体の 10 進の整数は、字句解析の途中で {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の行が 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、以下を実行する。どれが変わり、どれが変わらないかを確認する。"),
       rb(`
 p 12
 p 1_2
@@ -543,7 +543,7 @@ p 3k      #=> 3000
 p 12k + 1 #=> 12001`),
     ],
     hints: [
-      note("2 で見たとおり、小さな 10 進の整数は字句解析の途中で値まで計算しています（`parser->integer.value`）。その値は、`pm_integer_node_create` が `parser->integer.start == token->start` のときに使います。"),
+      note("2 で見たとおり、大体の 10 進の整数は字句解析の途中で値まで計算しています（`parser->integer.value`）。その値は、`pm_integer_node_create` が `parser->integer.start == token->start` のときに使います。"),
       note("`r` や `i` の suffix は、`lex_numeric` で `match(parser, 'r')` のように読んでいます。"),
     ],
     answer: [
