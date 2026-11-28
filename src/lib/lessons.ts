@@ -205,6 +205,7 @@ p "a" + "b"`),
       { title: "Advent of Prism: Part 13 - Calls (part 1)（Kevin Newton）", url: "https://kddnewton.com/2023/12/13/advent-of-prism-part-13.html" },
       { title: "Advent of Prism: Part 1 - Literals（Kevin Newton）", url: "https://kddnewton.com/2023/12/01/advent-of-prism-part-1.html" },
       { title: "第 10 章「パーサ」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/parser.html" },
+      { title: "Parsing: How Ruby Understands Your Code（Pat Shaughnessy）", url: "https://patshaughnessy.net/2025/10/27/parsing-how-ruby-understands-your-code" },
     ],
     task: [
       p("前の章の `＋` を、`+` と同じメソッド呼び出しにする。"),
@@ -856,6 +857,8 @@ end`),
     refs: [
       { title: "Advent of YARV: Part 1 - Pushing onto the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/01/advent-of-yarv-part-1.html" },
       { title: "Advent of YARV: Part 2 - Manipulating the stack（Kevin Newton）", url: "https://kddnewton.com/2022/12/02/advent-of-yarv-part-2.html" },
+      { title: "YARV’s Internal Stack and Your Ruby Stack（Pat Shaughnessy）", url: "https://patshaughnessy.net/2025/11/10/yarvs-internal-stack-and-your-ruby-stack" },
+      { title: "Ruby VM Stack and Frame Layout（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/master/contributing/vm_stack_and_frames_md.html" },
     ],
     task: [
       p("呼び出し元のフレームで、スタックに積まれている値の数を返す `RubyVM.stack_depth` を作る（ローカル変数は数えない）。"),
@@ -1053,6 +1056,7 @@ p x
       { title: "Advent of YARV: Part 9 - Local variables (2)（Kevin Newton）", url: "https://kddnewton.com/2022/12/09/advent-of-yarv-part-9.html" },
       { title: "Advent of YARV: Part 10 - Local variables (3)（Kevin Newton）", url: "https://kddnewton.com/2022/12/10/advent-of-yarv-part-10.html" },
       { title: "第 16 章「ブロック」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/iterator.html" },
+      { title: "Ruby VM Stack and Frame Layout（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/master/contributing/vm_stack_and_frames_md.html" },
     ],
     task: [
       p("ブロックの中で、外側のスコープのローカル変数を読んだ回数を返す `RubyVM.outer_reads` を作る。"),
@@ -1144,6 +1148,7 @@ puts [1].map { caller(0) }`),
     refs: [
       { title: "Advent of YARV: Part 3 - Frames and events（Kevin Newton）", url: "https://kddnewton.com/2022/12/03/advent-of-yarv-part-3.html" },
       { title: "第 14 章「コンテキスト」（Ruby ソースコード完全解説）", url: "https://i.loveruby.net/ja/rhg/book/module.html" },
+      { title: "Ruby VM Stack and Frame Layout（Ruby 公式ドキュメント）", url: "https://docs.ruby-lang.org/en/master/contributing/vm_stack_and_frames_md.html" },
     ],
     task: [
       p("呼び出し元のフレームより古いフレームの数を返す `RubyVM.frame_depth` を作る。"),
