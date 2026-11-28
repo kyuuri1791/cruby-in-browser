@@ -446,7 +446,7 @@ end`),
     title: "予約語と字句の状態",
     body: [
       p("このまとまりの問い：同じ文字列が、なぜ違う字句や構文木になるのか。"),
-      p("1. `main.rb` に次を書いて実行する。`p +2` と `p x +2` で、`+` の切られ方が違うことを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`+` の切られ方の違いを見てみる）"),
       rb(`
 def lex(code)
   puts code
@@ -454,8 +454,8 @@ def lex(code)
 end
 lex "p +2"
 lex "x = 1; p x +2"`),
-      p("2. `p +2` の `+2` を 1 つの数値にしているのは、{{prism.c:10991|PM_WARN_AMBIGUOUS_FIRST_ARGUMENT_PLUS), true) : false)}} の行の `lex_state_spcarg_p`（引数を書ける状態で、前に空白があり、直後に空白がない）。"),
-      p("この行の 3 項演算子全体を `false` に変えて `make` し、下を実行する。`+` の字句と、`p +2` の結果はどうなるか。"),
+      p("2. `p +2` は、`+2` を `p` する、として実行される。`+2` は {{prism.c:10991|PM_WARN_AMBIGUOUS_FIRST_ARGUMENT_PLUS), true) : false)}} の行の `lex_state_spcarg_p` で 1 つの数値になっている（引数を書ける状態で前に空白があり、直後に空白がない）。"),
+      p("この 3 項演算子全体を `false` に変えて `make` し、以下を実行する。`+` の字句と、`p +2` の結果はどうなるか。"),
       rb(`
 def lex(code)
   puts code
@@ -463,7 +463,7 @@ def lex(code)
 end
 lex "p +2"
 p +2`),
-      p("3. 2 の変更を戻して `make` し、下を実行する。同じ `if` が、文の頭と後ろで別の字句になることを確かめる。"),
+      p("3. 2 の変更を戻して `make` し直し、以下を実行する。`if` についてどのような違いが出ているかを確認する。"),
       rb(`
 def lex(code)
   puts code
@@ -521,11 +521,11 @@ end`),
     slug: "numeric-suffix",
     title: "数値リテラル",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（接尾辞の付いた数値がどんな字句になるかを見てみる）"),
       rb(`
 p Ruby::Prism.lex("1_000 0x10 3r 2i").value.map { _1[0].type }
 p Ruby::Prism.lex("3k").value.map { _1[0].type }`),
-      p("2. {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} は、字句解析の途中で 10 進の数字を 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、下を実行する。どれが変わるか予想してから確かめる。"),
+      p("2. 小さな 10 進の整数は、字句解析の途中で {{prism.c:8247|value = value * 10 + (uint64_t) (c - '0');}} の行が 1 桁ずつ値にしている。この行を `value = value * 10;` に変えて `make` し、以下を実行する。どれが変わり、どれが変わらないかを確認する。"),
       rb(`
 p 12
 p 1_2
@@ -580,13 +580,13 @@ end`),
     slug: "precedence",
     title: "演算子の優先順位",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（式がどんな括弧の付き方の木になるかを見てみる）"),
       rb(`
 def tree(n) = n.type == :call_node && n.arguments ? "(#{tree(n.receiver)} #{n.name} #{tree(n.arguments.arguments[0])})" : n.slice
 p tree(Ruby::Prism.parse("1 + 2 * 3").value.statements.body[0])
 p tree(Ruby::Prism.parse("1 - 2 - 3").value.statements.body[0])
 p tree(Ruby::Prism.parse("2 ** 3 ** 2").value.statements.body[0])`),
-      p("2. {{prism.c:12785|[PM_TOKEN_PLUS] = LEFT_ASSOCIATIVE(PM_BINDING_POWER_TERM),}} が `+` の結びつく強さ。`PM_BINDING_POWER_TERM` を `*` と同じ `PM_BINDING_POWER_FACTOR` に変えて `make` し、下を実行する。どれが変わるか予想してから確かめる。"),
+      p("2. `+` の結びつく強さは {{prism.c:12785|[PM_TOKEN_PLUS] = LEFT_ASSOCIATIVE(PM_BINDING_POWER_TERM),}} の行で決まっている。`PM_BINDING_POWER_TERM` を `*` と同じ `PM_BINDING_POWER_FACTOR` に変えて `make` し、以下を実行する。どれの結果が変わるかを確認する。"),
       rb(`
 p 1 + 2 * 3
 p 2 * 3 + 1
@@ -637,7 +637,7 @@ end`),
     slug: "var-or-call",
     title: "変数か、メソッド呼び出しか",
     body: [
-      p("1. `main.rb` に次を書き、どれが変数の読み出しになるか予想してから実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（同じ `foo` が、どの書き方のときに変数として読まれるかを見てみる）"),
       rb(`
 def kind(code) = puts "#{code.ljust(22)} #{Ruby::Prism.parse(code).value.statements.body.last.type}"
 kind "foo"
@@ -647,10 +647,10 @@ kind "foo = 1; foo"
 kind "foo = 1 if false; foo"
 foo = 1 if false
 p foo`),
-      p("2. `main.rb` に次を書いて実行する。ブロックの中の `it` も、代入していないのに変数として読まれることを確かめる。"),
+      p("2. `main.rb` に次を書いて実行する。（代入していないブロックの中の `it` がどう読まれるかを見てみる）"),
       rb(`p Ruby::Prism.parse("[1].map { it }").value.statements.body[0].block.body.body[0].type`),
-      p("3. 識別子を変数として読むかは `parse_variable` が決めている。その中で名前が `it` かを確かめている {{prism.c:16772|pm_token_is_it(parser->previous.start, parser->previous.end)) {}} の行を、`} else if (0) {` に変えて `make` する。"),
-      p("下を実行し、`it` がどう読まれるかを確かめる。"),
+      p("3. 識別子を変数として読むかは `parse_variable` が決めている。その中で、名前が `it` かを {{prism.c:16772|pm_token_is_it(parser->previous.start, parser->previous.end)) {}} の行で確かめている。この行を `} else if (0) {` に変えて `make` する。"),
+      p("以下を実行し、`it` がどう読まれるようになったかを確認する。"),
       rb(`
 p [1, 2].map { _1 * 2 }
 p [1, 2].map { it * 2 }`),
@@ -701,17 +701,17 @@ end`),
     title: "定数畳み込み",
     body: [
       p("このまとまりの問い：同じ書き方が、なぜ違う命令になるのか。"),
-      p("1. `main.rb` に次を書いて実行する。`1 + 2` は計算済みの 3 ではなく、`opt_plus` のまま残ることを確かめる。`\"a\".freeze` は専用の命令になる。"),
+      p("1. `main.rb` に次を書いて実行する。（`1 + 2` がコンパイル時に計算されているかを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("1 + 2").disasm
 puts RubyVM::InstructionSequence.compile('"a".freeze').disasm`),
-      p("2. `main.rb` に次を書き、結果を予想してから実行する。"),
+      p("2. `main.rb` に次を書いて実行する。`1 + 2` はどうなるか。"),
       rb(`
 class Integer
   def +(other) = 42
 end
 p 1 + 2`),
-      note("`Integer#+` は実行中に再定義できるので、コンパイラは `1 + 2` を 3 にしてよいとは言い切れません。"),
+      note("`Integer#+` は実行中に再定義できます。コンパイラが `1 + 2` を先に計算してよいかを考えてみてください。"),
     ],
     refs: [
       { title: "Prism（Kevin Newton）", url: "https://kddnewton.com/2024/01/23/prism.html" },
@@ -779,12 +779,12 @@ end`),
     slug: "branch-nil",
     title: "条件分岐のコンパイル",
     body: [
-      p("1. `main.rb` に次を書いて実行する。3 つとも最後は `branchunless`（偽なら飛ぶ）で分岐し、その前に条件を計算する命令が入ることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（条件の書き方によって、分岐の前の命令がどう変わるかを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; !x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; x.nil? ? :n : :v").disasm`),
-      p("2. この `branchunless` を出しているのは、`pm_compile_branch_condition` の最後の {{prism_compile.c:1114|PUSH_INSNL(ret, location, branchunless, else_label);}} の行。同じ関数の `switch` で、`&&` や `||` などの条件をどう分岐に直しているかを読む。"),
+      p("2. 条件分岐の命令は `pm_compile_branch_condition` が出していて、最後の {{prism_compile.c:1114|PUSH_INSNL(ret, location, branchunless, else_label);}} の行が `branchunless` を出している。同じ関数の `switch` で、`&&` や `||` の条件をどう分岐に直しているかを読む。"),
     ],
     refs: [
       { title: "Advent of YARV: Part 14 - Branching（Kevin Newton）", url: "https://kddnewton.com/2022/12/14/advent-of-yarv-part-14.html" },
@@ -850,7 +850,7 @@ end`),
     title: "VM のスタック",
     body: [
       p("このまとまりの問い：値や変数は、実行中どこにあるのか。"),
-      p("1. `main.rb` に次を書いて実行する。命令を 1 つずつ追い、スタックに積まれている値を書き出す。`newarray 3` の直前には、いくつ積まれているか。"),
+      p("1. `main.rb` に次を書いて実行する。命令を 1 つずつ追い、スタックに積まれている値を書き出してみる。`newarray 3` の直前には、いくつ積まれているか。"),
       rb(`puts RubyVM::InstructionSequence.compile("a = 1; b = 2; p [a, b, a + b]").disasm`),
       note("`putself` は `p` を呼ぶ相手（`self`）を積みます。`setlocal` で値はスタックから下ろされ、ローカル変数の場所に入ります。"),
     ],
@@ -921,11 +921,11 @@ end`),
     slug: "putobject",
     title: "putobject 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（`5` と `1` を積む命令を見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("p 5").disasm
 puts RubyVM::InstructionSequence.compile("p 1").disasm`),
-      p("2. `putobject` が積む値を横取りする。{{vm.inc:869|VALUE val = (VALUE)GET_OPERAND(1);}} の次に下の行を足して `make` し、下を実行する。どれが 500 になるか予想してから確かめる。"),
+      p("2. `putobject` が積む値は {{vm.inc:869|VALUE val = (VALUE)GET_OPERAND(1);}} の行で取り出している。この行の次に下の行を足して `make` し、以下を実行する。どれが 500 になるかを確認する。"),
       c(`if (val == INT2FIX(5)) val = INT2FIX(500);`),
       rb(`
 p 5
@@ -934,7 +934,7 @@ p x
 p 2 + 3
 p [5, 5]
 p 1`),
-      p("3. `main.rb` に次を書いて実行し、2 で 500 にならなかったものが、どの命令で積まれているかを確かめる。"),
+      p("3. `main.rb` に次を書いて実行する。2 で 500 にならなかったものは、どの命令で積まれているか。"),
       rb(`
 puts RubyVM::InstructionSequence.compile("p 2 + 3").disasm
 puts RubyVM::InstructionSequence.compile("p [5, 5]").disasm`),
@@ -1034,12 +1034,12 @@ end`),
     slug: "outer-locals",
     title: "getlocal 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。同じ `x` を読むのに、ブロックの深さによって命令が `getlocal_WC_0`・`getlocal_WC_1`・`getlocal`（`level` 付き）と変わることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（同じ `x` を読む命令が、ブロックの深さでどう変わるかを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; p x").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; [1].each { p x }").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; [1].each { [2].each { p x } }").disasm`),
-      p("2. {{vm.inc:4901|val = *(vm_get_ep(GET_EP(), level) - idx);}} は `getlocal_WC_1`（1 つ外のスコープの変数を読む命令）の中身。この行の次に下の行を足して `make` し、下を実行する。どれが 100 になるか予想してから確かめる。"),
+      p("2. {{vm.inc:4901|val = *(vm_get_ep(GET_EP(), level) - idx);}} の行は、1 つ外のスコープの変数を読む `getlocal_WC_1` の中身。この行の次に下の行を足して `make` し、以下を実行する。どれが 100 になるかを確認する。"),
       c(`if (val == INT2FIX(1)) val = INT2FIX(100);`),
       rb(`
 x = 1
@@ -1132,12 +1132,12 @@ end`),
     slug: "frame-depth",
     title: "フレーム",
     body: [
-      p("1. `main.rb` に次を書いて実行する。メソッドを呼ぶたび、ブロックを呼ぶたびにフレームが 1 つ積まれ、C の関数（`Array#map`）にもフレームがあることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（メソッドやブロックを呼ぶとフレームがどう積まれるかを見てみる）"),
       rb(`
 def f(n) = n == 0 ? caller(0).size : f(n - 1)
 p f(0), f(3)
 puts [1].map { caller(0) }`),
-      p("2. `main.rb` に次を書いて実行する。メソッドの命令列には、引数 `n` がローカル変数として入っている。フレームごとに、ローカル変数の場所とスタックがある。"),
+      p("2. `main.rb` に次を書いて実行する。（引数 `n` が命令列のどこにあるかを見てみる）"),
       rb(`puts RubyVM::InstructionSequence.compile("def f(n) = n").disasm`),
     ],
     refs: [
@@ -1202,11 +1202,11 @@ end`),
     slug: "branch",
     title: "branchif・branchunless 命令",
     body: [
-      p("1. `main.rb` に次を書いて実行する。`? :` は `branchunless`、`||` は `branchif` で分岐することを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`? :` と `||` がどの命令で分岐するかを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 0; x ? :t : :f").disasm
 puts RubyVM::InstructionSequence.compile("x = 0; x || :or").disasm`),
-      p("2. 真偽の判定は `RTEST`（`nil` と `false` だけが偽）。{{vm.inc:3355|if (!RTEST(val)) {}} は `branchunless` の中身で、この行を下に変えて `make` し、下を実行する。どれが変わるか予想してから確かめる。"),
+      p("2. 真偽は `RTEST`（`nil` と `false` だけが偽）で判定していて、{{vm.inc:3355|if (!RTEST(val)) {}} の行は `branchunless` の中身。この行を下に変えて `make` し、以下を実行する。どれの結果が変わるかを確認する。"),
       c(`if (!RTEST(val) || val == INT2FIX(0)) {`),
       rb(`
 x = 0
@@ -1214,7 +1214,7 @@ p(x ? :t : :f)
 p(x && :and)
 p(x || :or)
 p(0 ? :t : :f)`),
-      p("3. `main.rb` に次を書いて実行し、2 で `0 ? :t : :f` が変わらなかった理由を確かめる。"),
+      p("3. `main.rb` に次を書いて実行する。2 で `0 ? :t : :f` が変わらなかったのはなぜか。"),
       rb(`puts RubyVM::InstructionSequence.compile("0 ? :t : :f").disasm`),
     ],
     refs: [
@@ -1316,7 +1316,7 @@ end`),
     title: "opt_plus 命令",
     body: [
       p("このまとまりの問い：`+` や `foo.bar` は、どの経路で C の関数に届くのか。"),
-      p("1. `main.rb` に次を書いて実行する。`x + y` は `opt_plus`、`send` で呼ぶと普通のメソッド呼び出し（`opt_send_without_block`）になることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`+` と書いたときと `send` を使ったときの、命令の違いを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("x = 1; y = 2; p x + y").disasm
 puts RubyVM::InstructionSequence.compile("x = 1; y = 2; p x.send(:+, y)").disasm`),
@@ -1324,7 +1324,7 @@ puts RubyVM::InstructionSequence.compile("x = 1; y = 2; p x.send(:+, y)").disasm
       c(`
 fprintf(stderr, "fast path\\n");
 if (me->def->original_id == idPLUS) fprintf(stderr, "cfunc +\\n");`),
-      p("3. `make` し、下を実行する。それぞれ、どちらの印が出るか予想してから確かめる。"),
+      p("3. `make` し、以下を実行する。それぞれ、どちらの印が出るかを確認する。"),
       rb(`
 x = 1
 y = 2
@@ -1333,7 +1333,7 @@ p x.send(:+, y)
 p 1.5 + 2
 Integer.prepend(Module.new { def +(other) = super })
 p x + y`),
-      note("`1.5 + 2` も `opt_plus` ですが、近道は整数どうしなどに限られます。近道を通れないと、普通のメソッド呼び出しとして `Float#+` の C の関数まで進みます。`Integer#+` を再定義したときも同じです。"),
+      note("`1.5 + 2` も `opt_plus` の命令です。近道を通れないときに何が呼ばれるかに注目してください。"),
     ],
     refs: [
       { title: "Advent of YARV: Part 0 - Introduction（Kevin Newton）", url: "https://kddnewton.com/2022/11/30/advent-of-yarv-part-0.html" },
@@ -1428,11 +1428,11 @@ end`),
     slug: "cfunc-call",
     title: "C の関数の呼び出し",
     body: [
-      p("1. `main.rb` に次を書いて実行する。`size` にも `opt_size` という専用の命令があることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`size` と `at` の呼び出しの命令の違いを見てみる）"),
       rb(`
 puts RubyVM::InstructionSequence.compile("[1].size").disasm
 puts RubyVM::InstructionSequence.compile("[1].at(0)").disasm`),
-      p("2. 前の章と同じ場所（{{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} の前）に、今度はどのメソッドでも名前を出す下の行を足す。`make` し、下を実行する。どれで出力されるか予想してから確かめる。"),
+      p("2. 前の章と同じ場所（{{vm_insnhelper.c:3936|val = (*cfunc->invoker)(recv, argc, argv, cfunc->func);}} の前）に、今度はどのメソッドでも名前を出す下の行を足す。`make` し、以下を実行する。どれで出力されるかを確認する。"),
       c(`fprintf(stderr, "cfunc %s\\n", rb_id2name(me->def->original_id));`),
       rb(`
 p 1 + 2
@@ -1440,9 +1440,9 @@ p 1 + 2
 [1, 2].first
 [1].size
 "a".upcase`),
-      p("3. `main.rb` に次を書いて実行し、2 で `first` が出なかった理由を確かめる。"),
+      p("3. `main.rb` に次を書いて実行する。2 で `first` が出なかったのはなぜか。"),
       rb(`p Array.instance_method(:first).source_location`),
-      p("4. 呼び出しのたびにメソッドを探しているかを見る。{{vm_insnhelper.c:2313|vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)}} は、呼び出しの場所ごとのキャッシュが外れたときに呼ばれる。この関数の先頭に下の行を足して `make` し、下を実行する。`miss at` は何回出るか。"),
+      p("4. {{vm_insnhelper.c:2313|vm_search_method_slowpath0(VALUE cd_owner, struct rb_call_data *cd, VALUE klass)}} は、呼び出しの場所ごとのキャッシュが外れたときに呼ばれる。この関数の先頭に下の行を足して `make` し、以下を実行する。`miss at` は何回出るか。"),
       c(`fprintf(stderr, "miss %s\\n", rb_id2name(vm_ci_mid(cd->ci)));`),
       rb(`3.times { [1, 2].at(0) }`),
     ],
@@ -1528,7 +1528,7 @@ end`),
     slug: "module-mixins",
     title: "メソッド探索",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（include と prepend したモジュールが `ancestors` のどこに入るかを見てみる）"),
       rb(`
 module A; end
 module B; end
@@ -1539,7 +1539,7 @@ class C
 end
 
 p C.ancestors`),
-      p("2. メソッドを探す順を見る。探索の本体は `search_method0` で、クラスを 1 つずつ親（`RCLASS_SUPER`）へたどりながらメソッドの表を引く。{{vm_method.c:1926|RB_DEBUG_COUNTER_INC(mc_search_super);}} の次に下の行を足して `make` し、下を実行する。"),
+      p("2. メソッドの探索は `search_method0` で、クラスを 1 つずつ親（`RCLASS_SUPER`）へたどりながらメソッドの表を引いている。{{vm_method.c:1926|RB_DEBUG_COUNTER_INC(mc_search_super);}} の次に下の行を足して `make` し、以下を実行する。"),
       c(`if (id == rb_intern("hello")) fprintf(stderr, "search %s\\n", rb_class2name(BUILTIN_TYPE(klass) == T_ICLASS ? RBASIC_CLASS(klass) : klass));`),
       rb(`
 module A; end
@@ -1652,7 +1652,7 @@ end`),
     slug: "method-missing",
     title: "メソッドが見つからないとき",
     body: [
-      p("1. `main.rb` に次を書き、`foo.baz` の結果を予想してから実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（private のメソッドを外から呼んだ `foo.baz` がどうなるかを見てみる）"),
       rb(`
 class Foo
   def bar = :bar
@@ -1664,7 +1664,7 @@ foo = Foo.new
 p foo.bar
 p foo.unknown
 p foo.baz`),
-      p("2. VM が `method_missing` を呼ぶところへ印を付ける。{{vm_insnhelper.c:4599|RB_DEBUG_COUNTER_INC(ccf_method_missing);}} の次に下の行を足して `make` し、下を実行する。どの呼び出しで、どの印が出るか。"),
+      p("2. VM が `method_missing` を呼ぶところへ印を付ける。{{vm_insnhelper.c:4599|RB_DEBUG_COUNTER_INC(ccf_method_missing);}} の次に下の行を足して `make` し、以下を実行する。どの呼び出しで、どの印が出るかを確認する。"),
       c(`fprintf(stderr, "method_missing %s%s\\n", rb_id2name(vm_ci_mid(orig_ci)), reason & MISSING_PRIVATE ? " (private)" : "");`),
       rb(`
 class Foo
@@ -1678,7 +1678,7 @@ p foo.bar
 p foo.unknown
 p foo.baz
 begin; Object.new.qux; rescue NoMethodError => e; p e; end`),
-      note("メソッドがないときも、private で呼べないときも、VM は `method_missing` を呼びます。`method_missing` を定義していなければ `BasicObject#method_missing` が呼ばれ、それが `NoMethodError` を投げます。"),
+      note("`method_missing` を定義していないクラスでも、`BasicObject#method_missing` があります。`Object.new.qux` の印と例外の関係を考えてみてください。"),
     ],
     refs: [
       { title: "Advent of YARV: Part 6 - Calling methods (1)（Kevin Newton）", url: "https://kddnewton.com/2022/12/06/advent-of-yarv-part-6.html" },
@@ -1734,9 +1734,9 @@ end`),
     slug: "ivar-cache",
     title: "インスタンス変数とキャッシュ",
     body: [
-      p("1. `main.rb` に次を書いて実行する。`getinstancevariable` 命令にも、呼び出しと同じくキャッシュ（`<is:…>`）が付いていることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`getinstancevariable` 命令に付いているものを見てみる）"),
       rb(`puts RubyVM::InstructionSequence.compile("@a = 1; @a").disasm`),
-      p("2. インスタンス変数の場所は、オブジェクトの形（shape、インスタンス変数を足した順）で決まる。{{vm_insnhelper.c:1312|else { // cache miss case}} の次に下の 1 行目を足して `make` し、下を実行する。`miss @a` は何回出るか予想してから確かめる。"),
+      p("2. インスタンス変数の場所は、オブジェクトの形（shape、インスタンス変数を足した順）で決まる。{{vm_insnhelper.c:1312|else { // cache miss case}} の次に下の 1 行目を足して `make` し、以下を実行する。`miss @a` は何回出るかを確認する。"),
       c(`if (id == rb_intern("@a")) fprintf(stderr, "miss @a\\n");`),
       rb(`
 class R
@@ -1833,21 +1833,21 @@ end`),
     title: "proc と lambda",
     body: [
       p("このまとまりの問い：ブロックは、なぜ外の変数や `self` を見られるのか。"),
-      p("1. `main.rb` に次を書いて実行する。proc は足りない引数を `nil` で埋め、lambda はエラーにすることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（proc と lambda で、足りない引数の扱いがどう違うかを見てみる）"),
       rb(`
 pr = proc { |a, b| [a, b] }
 l = lambda { |a, b| [a, b] }
 p pr.lambda?, l.lambda?
 p pr.call(1)
 p((l.call(1) rescue $!))`),
-      p("2. proc と lambda の違いは、Proc オブジェクトの `is_lambda` という 1 ビットだけ。`define_method` に proc を渡して、下を実行する。"),
+      p("2. proc と lambda の違いは、Proc オブジェクトの `is_lambda` という 1 ビットだけ。`define_method` に proc を渡して、以下を実行する。proc と lambda のどちらの動きになるか。"),
       rb(`
 pr = proc { |a, b| [a, b] }
 class Foo; end
 Foo.define_method(:m, pr)
 p((Foo.new.m(1) rescue $!))`),
-      p("3. `define_method` は、渡された proc の {{proc.c:3211|proc->header.is_lambda = TRUE;}} で lambda にしている。この行を消して `make` し、2 と同じコードを実行する。"),
-      note("結果は変わりません。メソッドとして呼ぶ VM の経路も、proc か lambda かを見ずに、lambda と同じく引数の数を確かめているためです。課題では、そこも直します。"),
+      p("3. `define_method` は、渡された proc を {{proc.c:3211|proc->header.is_lambda = TRUE;}} の行で lambda にしている。この行を消して `make` し、2 と同じコードを実行する。結果は変わるか。"),
+      note("変わらないときは、メソッドとして呼ぶ VM の経路も見てください（課題のヒント）。"),
     ],
     refs: [
       { title: "Feature #16499: define_method(non_lambda) should not change the semantics of the given Proc（Ruby Issue Tracking System）", url: "https://bugs.ruby-lang.org/issues/16499" },
@@ -1929,14 +1929,14 @@ end`),
     slug: "block-splat",
     title: "ブロック引数の自動展開",
     body: [
-      p("1. `main.rb` に次を書いて実行する。"),
+      p("1. `main.rb` に次を書いて実行する。（配列を 1 つ渡したとき、ブロックの引数がどう受け取られるかを見てみる）"),
       rb(`
 p [[1, 2]].map { |a, b| [a, b] }
 p [[1, 2]].map { |a| a }
 p [[1, 2]].map { |a, | a }
 p proc { |a, b| [a, b] }.call([1, 2])
 p((lambda { |a, b| [a, b] }.call([1, 2]) rescue $!))`),
-      p("2. 配列を 1 つだけ受けたブロックが引数を展開するのは {{vm_insnhelper.c:5544|calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);}} の行。この行の前に下の行を足して `make` し、1 と同じコードを実行する。どれで出力されるか予想してから確かめる。"),
+      p("2. 配列を 1 つだけ受けたブロックは、{{vm_insnhelper.c:5544|calling->argc = vm_callee_setup_block_arg_arg0_splat(cfp, iseq, argv, arg0);}} の行で引数を展開している。この行の前に下の行を足して `make` し、1 と同じコードを実行する。どれで出力されるかを確認する。"),
       c(`fprintf(stderr, "splat\\n");`),
     ],
     refs: [
@@ -2019,12 +2019,12 @@ end`),
     slug: "tap-eval",
     title: "ブロックと self",
     body: [
-      p("1. `main.rb` に次を書いて実行する。`instance_exec` のブロックの中では、外の変数 `x` は見えたまま、`self` だけが `o` に変わることを確かめる。"),
+      p("1. `main.rb` に次を書いて実行する。（`instance_exec` のブロックの中で、`self` と外の変数 `x` がどう見えるかを見てみる）"),
       rb(`
 x = 10
 o = Object.new
 p o.instance_exec { [equal?(o), x] }`),
-      p("2. ブロックは、作られた場所の環境（ローカル変数）と `self` を組にして持っている。`instance_exec` は、その組の `self` だけを差し替えて呼ぶ。差し替えている {{vm_eval.c:2282|new_captured.self = self;}} の行を消して `make` し、1 と同じコードを実行する。"),
+      p("2. ブロックは、作られた場所の環境（ローカル変数）と `self` を組にして持っている。`instance_exec` は、{{vm_eval.c:2282|new_captured.self = self;}} の行でその組の `self` だけを差し替えて呼ぶ。この行を消して `make` し、1 と同じコードを実行する。"),
     ],
     refs: [
       { title: "Understanding instance exec in ruby（BigBinary）", url: "https://www.bigbinary.com/blog/understanding-instance-exec-in-ruby" },
